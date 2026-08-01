@@ -35,6 +35,18 @@ import CoreBluetooth
 struct ContentView: View {
     @State private var mfiOutput = "Tap per controllare."
     @StateObject private var bleScanner = BLEScanner()
+    @State private var onlyBand10 = true
+
+    // Same pattern as DEVICE_NAME_RE in src/miband/transport.py.
+    private static let band10Regex = try! NSRegularExpression(pattern: "^Xiaomi Smart Band 10 [0-9A-F]{4}$")
+
+    private var visibleDevices: [BLEScanner.Found] {
+        guard onlyBand10 else { return bleScanner.found }
+        return bleScanner.found.filter { item in
+            let range = NSRange(item.name.startIndex..., in: item.name)
+            return Self.band10Regex.firstMatch(in: item.name, range: range) != nil
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -50,7 +62,8 @@ struct ContentView: View {
 
             Text("BLE scan (CoreBluetooth) -- tap a device to connect + enumerate GATT")
                 .font(.headline)
-            List(bleScanner.found) { item in
+            Toggle("Solo Band 10 (\(bleScanner.found.count) totali)", isOn: $onlyBand10)
+            List(visibleDevices) { item in
                 Button {
                     bleScanner.connect(item)
                 } label: {
