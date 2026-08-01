@@ -85,7 +85,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
     @Published var isScanning = false
 
     private var manager: CBCentralManager?
-    private var found: [UUID: String] = [:]
+    private var found: [UUID: (rssi: Int, line: String)] = [:]
 
     func toggle() {
         if isScanning {
@@ -118,7 +118,26 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
         let name = peripheral.name ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? "(no name)"
         let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?
             .map(\.uuidString).joined(separator: ",") ?? "-"
-        found[peripheral.identifier] = "\(name)  rssi=\(RSSI)  id=\(peripheral.identifier)  services=\(services)"
-        output = found.values.sorted().joined(separator: "\n")
+
+        var manufacturer = "-"
+        if let data = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data, data.count >= 2 {
+            // First 2 bytes = Bluetooth SIG company ID, little-endian; rest is
+            // vendor-specific payload. Cross-reference the ID against
+            // https://www.bluetooth.com/specifications/assigned-numbers/company-identifiers/
+            // -- not hardcoding a vendor name here since we haven't verified it.
+            let companyId = UInt16(data[1]) << 8 | UInt16(data[0])
+            let hex = data.map { String(format: "%02X", $0) }.joined()
+            manufacturer = String(format: "companyId=0x%04X data=%@", companyId, hex)
+        }
+
+        let rssi = RSSI.intValue
+        found[peripheral.identifier] = (
+            rssi: rssi,
+            line: "\(name)  rssi=\(rssi)  id=\(peripheral.identifier)  services=\(services)  mfgData=\(manufacturer)"
+        )
+        output = found.values
+            .sorted { $0.rssi > $1.rssi }
+            .map(\.line)
+            .joined(separator: "\n")
     }
 }
