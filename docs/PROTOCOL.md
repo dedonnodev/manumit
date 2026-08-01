@@ -31,6 +31,59 @@ extra dependency needed. `transport.py` should wrap an RFCOMM socket, not a
 BLE GATT client. This still fits the "thin transport interface, testable
 off-device" requirement from the brief.
 
+**Correction (M1, verified on hardware via `ios/MFiCheck`):** the above is
+Android/Gadgetbridge's reality only. The device *also* advertises and serves
+a full BLE GATT interface in parallel — see §0a. Gadgetbridge never needed
+it because Android can open an arbitrary classic-BT RFCOMM socket from any
+app; iOS categorically cannot (`CoreBluetooth` is BLE-only, and classic-BT/
+RFCOMM access from a non-jailbroken app requires MFi certification via
+`ExternalAccessory`, which this reverse-engineered protocol doesn't have —
+confirmed empty `EAAccessoryManager.connectedAccessories` on real hardware).
+**The Phase 1 Swift/iOS implementation should target the BLE GATT interface
+in §0a, not classic RFCOMM.**
+
+## 0a. BLE GATT surface (iOS path) — verified on hardware
+
+**[verified, `ios/MFiCheck`]** Confirmed via a throwaway SwiftUI/CoreBluetooth
+diagnostic app (`ios/MFiCheck/`, not part of the AGPL Python CLI, built
+unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
+
+- Advertises with local name matching the same regex as classic-BT discovery
+  (§1), e.g. `Xiaomi Smart Band 10 E817`. The advertisement payload itself
+  carries **no service UUID list and no manufacturer data** — only the name.
+  Advertising window is narrow and appears tied to the official Xiaomi app
+  actively syncing/refreshing the device, not constant (same discoverability
+  quirk observed on the Windows classic-BT side, §1a). Practical consequence:
+  a passive scan often sees nothing; triggering a sync from the Xiaomi
+  Wear/Mi Fitness app while scanning is what surfaces it.
+- Once connected, GATT table observed:
+  - **`FE95`** — SIG-registered to Xiaomi Inc. (MiBeacon; verified against
+    the official Bluetooth SIG assigned-numbers registry, not from memory).
+    Characteristics `0050` `[read]`, `005E` `[writeNoResp, notify]`, `005F`
+    `[writeNoResp, notify]`. Shape suggests a command/response pair (write
+    request, notify response) — likely Xiaomi's standard Mi-ecosystem
+    binding/provisioning channel, shared across many Xiaomi BLE products,
+    not Band-10-specific.
+  - **`FDAB`** — not a SIG-registered UUID (vendor-custom). Characteristics
+    `0001` `[read]`, `0002` `[writeNoResp, notify]`, `0003` `[writeNoResp,
+    notify]`. Same read + write/notify-pair shape as `FE95`. Best guess:
+    the actual Band 10 control/data channel — unverified, payload format
+    not yet reverse-engineered.
+  - **`180F`** Battery Service → `2A19` Battery Level `[read, notify]`
+    (standard GATT, no reverse-engineering needed).
+  - **`180A`** Device Information Service → `2A50` PnP ID `[read]`
+    (standard GATT).
+  - **`180D`** Heart Rate Service → `2A37` Heart Rate Measurement
+    `[notify]` (standard GATT — live heart rate is readable with zero
+    proprietary protocol work).
+- Open question: is `FDAB`'s payload the same protobuf/framed-channel
+  protocol documented in §5-§6 for the classic-BT SPP stream, tunneled over
+  BLE writes/notifications instead, or a distinct encoding (Xiaomi's public
+  MiBeacon spec uses AES-CCM-encrypted beacon frames, which is a different
+  shape from the SPP framing in §2)? Needs a live capture of `FDAB` traffic
+  (e.g. sniff the official iOS app, or issue reads/writes from `MFiCheck`
+  and observe responses) before assuming §5/§6 apply unchanged.
+
 ## 1. Transport
 
 **[from source, untested]**
@@ -43,9 +96,10 @@ off-device" requirement from the brief.
 - Device name filter used by Gadgetbridge to identify a Band 10 during scan:
   regex `^Xiaomi Smart Band 10 [0-9A-F]{4}$`
   (`devices/xiaomi/watches/MiBand10Coordinator.java:36`).
-- No GATT services/characteristics apply to this device. (BLE UUIDs exist in
-  the same codebase for *other* Xiaomi wearables — Mi Band 8, Redmi Watch
-  3 Active, etc. — but are irrelevant here; not reproduced in this doc.)
+- No GATT services/characteristics apply to *this transport* (Gadgetbridge's
+  Android/classic-BT path). The device does have a separate BLE GATT
+  interface used by the iOS path — see §0a, not covered by Gadgetbridge
+  since Android never needs it.
 
 ## 2. Frame format
 
