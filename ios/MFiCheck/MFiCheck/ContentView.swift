@@ -229,7 +229,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         let payload = bytes[8...]
         let packetTypeNames: [UInt8: String] = [1: "ACK", 2: "SessionConfig", 3: "Data"]
         var decoded: [String: Any] = [
-            "packet_type": packetTypeNames[packetType] ?? Int(packetType),
+            "packet_type": packetTypeNames[packetType] ?? String(packetType),
             "sequence": Int(sequence),
             "declared_length": length,
             "checksum": checksum,
@@ -238,7 +238,8 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         if packetType == 3, payload.count >= 2 {
             decoded["raw_channel"] = Int(payload[payload.startIndex]) & 0xF
             let opCode = payload[payload.startIndex + 1]
-            decoded["op_code"] = opCode == 1 ? "PLAINTEXT" : (opCode == 2 ? "ENCRYPTED" : Int(opCode))
+            let opCodeNames: [UInt8: String] = [1: "PLAINTEXT", 2: "ENCRYPTED"]
+            decoded["op_code"] = opCodeNames[opCode] ?? String(opCode)
         }
         return decoded
     }
