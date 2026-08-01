@@ -146,7 +146,8 @@ enum SppV2Codec {
             ))
             assert(encoded == startSessionRequest)
 
-            assert(try decode(sessionConfigResponse.prefix(10)) == nil)
+            let incomplete = try decode(sessionConfigResponse.prefix(10))
+            assert(incomplete == nil)
         } catch {
             assertionFailure("SppV2Codec.selfTest failed: \(error)")
         }
