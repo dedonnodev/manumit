@@ -90,6 +90,7 @@ struct ContentView: View {
             HStack {
                 Button("Probe FDAB (blind bytes)") { bleScanner.probeFDAB() }
                 Button("Probe FDAB (SPP-V1 Version read)") { bleScanner.probeSppV1VersionRead() }
+                Button("Probe FE95 (SPP-V2 StartSession)") { bleScanner.probeBleV2StartSession() }
                 Button("Copy") { UIPasteboard.general.string = bleScanner.gattOutput }
             }
         }
@@ -139,6 +140,14 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     private static let fdabChar0003 = CBUUID(string: "0003")
     private var fdabChar0002Ref: CBCharacteristic?
     private var fdabChar0003Ref: CBCharacteristic?
+
+    // Gadgetbridge's known BLE-V2 transport (XiaomiUuids.java: "Mi Band 9
+    // Active"), reused verbatim here -- matches this device's FE95 chars.
+    // See docs/PROTOCOL.md §0a.
+    private static let fe95Service = CBUUID(string: "FE95")
+    private static let ble2ReadChar = CBUUID(string: "005E")  // notify (device -> phone)
+    private static let ble2WriteChar = CBUUID(string: "005F") // write (phone -> device)
+    private var ble2WriteRef: CBCharacteristic?
 
     private func hexString(_ data: Data) -> String {
         data.isEmpty ? "(empty)" : data.map { String(format: "%02X", $0) }.joined(separator: " ")
@@ -237,20 +246,35 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         }.joined(separator: "\n")
         gattOutput += "\n\nService \(service.uuid.uuidString):\n\(chars)"
 
-        guard service.uuid == Self.fdabService else { return }
-        for c in service.characteristics ?? [] {
-            switch c.uuid {
-            case Self.fdabChar0001:
-                peripheral.readValue(for: c)
-            case Self.fdabChar0002:
-                fdabChar0002Ref = c
-                peripheral.setNotifyValue(true, for: c)
-            case Self.fdabChar0003:
-                fdabChar0003Ref = c
-                peripheral.setNotifyValue(true, for: c)
-            default:
-                break
+        switch service.uuid {
+        case Self.fdabService:
+            for c in service.characteristics ?? [] {
+                switch c.uuid {
+                case Self.fdabChar0001:
+                    peripheral.readValue(for: c)
+                case Self.fdabChar0002:
+                    fdabChar0002Ref = c
+                    peripheral.setNotifyValue(true, for: c)
+                case Self.fdabChar0003:
+                    fdabChar0003Ref = c
+                    peripheral.setNotifyValue(true, for: c)
+                default:
+                    break
+                }
             }
+        case Self.fe95Service:
+            for c in service.characteristics ?? [] {
+                switch c.uuid {
+                case Self.ble2ReadChar:
+                    peripheral.setNotifyValue(true, for: c)
+                case Self.ble2WriteChar:
+                    ble2WriteRef = c
+                default:
+                    break
+                }
+            }
+        default:
+            break
         }
     }
 
@@ -316,5 +340,64 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             peripheral.writeValue(packet, for: char, type: .withoutResponse)
             gattOutput += "\n[probe] wrote SPP-V1 Version read to \(charLabel): \(hexString(packet))"
         }
+    }
+
+    // CRC-16/ARC (poly 0x8005, init 0, reflected in/out, no xorout), ported
+    // bit-for-bit from XiaomiSppPacketV2.calculatePayloadChecksum() (Java
+    // `int` is a 32-bit two's-complement register; UInt32 here behaves the
+    // same way under left-shift and bitwise ops).
+    private func sppV2Checksum(_ payload: Data) -> UInt16 {
+        var crc: UInt32 = 0
+        for byte in payload {
+            for j: UInt32 in 0..<8 {
+                crc <<= 1
+                let bBit = (UInt32(byte) >> j) & 1
+                if (((crc >> 16) & 1) ^ bBit) == 1 {
+                    crc ^= 0x8005
+                }
+            }
+        }
+        var reversed: UInt32 = 0
+        var v = crc
+        for _ in 0..<32 {
+            reversed = (reversed << 1) | (v & 1)
+            v >>= 1
+        }
+        return UInt16((reversed >> 16) & 0xFFFF)
+    }
+
+    private func buildSppV2Packet(packetType: UInt8, sequenceNumber: UInt8, payload: Data) -> Data {
+        var packet = Data([0xA5, 0xA5, packetType & 0x0F, sequenceNumber])
+        let length = UInt16(payload.count)
+        packet.append(UInt8(length & 0xFF))
+        packet.append(UInt8(length >> 8))
+        let checksum = sppV2Checksum(payload)
+        packet.append(UInt8(checksum & 0xFF))
+        packet.append(UInt8(checksum >> 8))
+        packet.append(payload)
+        return packet
+    }
+
+    // Real Gadgetbridge BLE-V2 first message (XiaomiSppPacketV2.java:133-158,
+    // "from packet dump of official app"): SessionConfig StartSessionRequest,
+    // opcode 1, TLVs VERSION=01.00.00, MAX_PACKET_SIZE=0xfc00, TX_WIN=0x0020,
+    // SEND_TIMEOUT=0x2710.
+    private func buildSessionConfigStartRequestPayload() -> Data {
+        var payload = Data([0x01])                              // opcode: START_SESSION_REQUEST
+        payload.append(contentsOf: [0x01, 0x03, 0x00, 0x01, 0x00, 0x00]) // KEY_VERSION
+        payload.append(contentsOf: [0x02, 0x02, 0x00, 0x00, 0xFC])       // KEY_MAX_PACKET_SIZE
+        payload.append(contentsOf: [0x03, 0x02, 0x00, 0x20, 0x00])       // KEY_TX_WIN
+        payload.append(contentsOf: [0x04, 0x02, 0x00, 0x10, 0x27])       // KEY_SEND_TIMEOUT
+        return payload
+    }
+
+    func probeBleV2StartSession() {
+        guard let peripheral = connectedPeripheral, let writeChar = ble2WriteRef else {
+            gattOutput += "\n\n[probe] not connected, or FE95 005F not discovered yet"
+            return
+        }
+        let packet = buildSppV2Packet(packetType: 2, sequenceNumber: 0, payload: buildSessionConfigStartRequestPayload())
+        peripheral.writeValue(packet, for: writeChar, type: .withoutResponse)
+        gattOutput += "\n[probe] wrote SPP-V2 StartSessionRequest to 005F: \(hexString(packet))"
     }
 }

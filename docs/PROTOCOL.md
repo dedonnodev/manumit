@@ -99,16 +99,40 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
   empty/null-byte probe. Rules out "any syntactically-valid SPP-V1 packet
   wakes it up" — a correctly-framed, real Gadgetbridge packet got exactly
   the same silence as garbage bytes.
-- Working hypothesis, revised: `FDAB` is **not** classic-BT SPP framing
-  tunneled over BLE. More likely either (a) gated behind a handshake/auth
-  step before it responds to anything (mirroring §3), or (b) a distinct
-  encoding entirely — e.g. Xiaomi's public MiBeacon AES-CCM beacon-frame
-  format, which `FE95` (also present on this device, SIG-registered to
-  Xiaomi/MiBeacon) hints could apply here too. Next useful probe: try
-  `FE95`'s `005E`/`005F` the same way (they're unauth'd and equally
-  unexplored), or sniff the official Mi Fitness/Xiaomi Wear iOS app's real
-  traffic to `FDAB` via a BLE HCI snoop, since further blind guessing on
-  `FDAB` in isolation hasn't produced a single byte back.
+- **Correction, from source (2026-08-01):** `FDAB` was the wrong channel —
+  Gadgetbridge's own tree already has a working BLE transport for other
+  Xiaomi devices, and it targets `FE95`, not `FDAB`. `FDAB` doesn't appear
+  anywhere in Gadgetbridge; blind probing it was always going to be
+  silence. Found by reading `reference/Gadgetbridge` source (no Android/
+  live-app sniffing needed — the answer was already checked into the repo
+  we're deriving from):
+  - `XiaomiUuids.java:29-31` (`BLE_V2_SERVICE_UUID`/`_RX_UUID`/`_TX_UUID`,
+    comment "Mi Band 9 Active"): service `FE95`, RX characteristic `005E`,
+    TX characteristic `005F` — an **exact match** for two of this device's
+    three `FE95` characteristics (`0050` is extra/unexplained).
+  - `XiaomiBleSupport.java` + `XiaomiBleProtocolV2.java`: this is a real,
+    working Gadgetbridge BLE transport (`XiaomiBleProtocolV2`, used when
+    `XiaomiBleProtocolV1` — the older `0051`-`0055` scheme, §0a below —
+    doesn't match). It reuses the **SPP-V2 packet framing from §2.3**
+    (`A5 A5` preamble, not SPP-V1's `BA DC FE`) verbatim over BLE: notify
+    enabled on `005E`, writes chunked onto `005F`
+    (`XiaomiBleProtocolV2.java:66-93, 351-353`).
+  - First packet sent, before anything else: a `SessionConfig`
+    `START_SESSION_REQUEST` (packet type 2, not a Version-channel read),
+    payload `01 01 03 00 01 00 00 02 02 00 00 FC 03 02 00 20 00 04 02 00
+    10 27` (opcode + VERSION/MAX_PACKET_SIZE/TX_WIN/SEND_TIMEOUT TLVs,
+    `XiaomiSppPacketV2.java:133-158` — "from packet dump of official app").
+    Checksum is CRC-16/ARC (poly `0x8005`, init 0, reflected in/out, no
+    xorout) over the payload only (`XiaomiSppPacketV2.java:413-425`).
+  - This means the earlier `BA DC FE`-framed probe (previous entry) was
+    doubly wrong: wrong characteristic (`FDAB` vs `FE95`) *and* wrong
+    framing version (SPP-V1 vs SPP-V2) *and* wrong first message
+    (Version-read vs StartSessionRequest). Not yet tried on hardware.
+  - `XiaomiUuids.java:33-46` also documents an older **BLE-V1** scheme
+    (`FE95` again, but characteristics `0051`/`0052`/`0053`/`0055`, used by
+    Mi Band 8/Redmi Watch 3 Active/etc., encrypted from the start) — doesn't
+    match this device's characteristic list at all, so BLE-V2 is the one to
+    try.
 
 ## 1. Transport
 
