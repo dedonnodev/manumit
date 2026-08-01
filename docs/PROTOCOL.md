@@ -91,13 +91,24 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
     requires a prior handshake/auth step (mirroring §3's auth handshake
     on the classic-BT side) before it responds to anything on `0002`/
     `0003`.
-- Open question, now narrower: is `FDAB` the same protobuf/framed-channel
-  protocol documented in §5-§6 for the classic-BT SPP stream, tunneled over
-  BLE writes/notifications instead (§2's `BA DC FE`/`A5 A5` preambles), or a
-  distinct encoding? A blind empty/null write wasn't enough to tell — next
-  useful probe is writing an actual §2-shaped packet (preamble + minimal
-  header) at `0002`/`0003` and see if that's what finally provokes a
-  response, rather than more unstructured bytes.
+- **SPP-V1-framed probe result (`ios/MFiCheck`, 2026-08-01):** wrote the
+  literal first packet Gadgetbridge sends on classic-BT RFCOMM (§2.1/§2.2:
+  `BA DC FE 00 40 03 00 00 00 00 EF` — preamble, channel 0/Version,
+  `needsResponse` flag, `OPCODE_READ`, plaintext, `EF` epilogue) to both
+  `0002` and `0003`. **Still zero response**, same as the blind
+  empty/null-byte probe. Rules out "any syntactically-valid SPP-V1 packet
+  wakes it up" — a correctly-framed, real Gadgetbridge packet got exactly
+  the same silence as garbage bytes.
+- Working hypothesis, revised: `FDAB` is **not** classic-BT SPP framing
+  tunneled over BLE. More likely either (a) gated behind a handshake/auth
+  step before it responds to anything (mirroring §3), or (b) a distinct
+  encoding entirely — e.g. Xiaomi's public MiBeacon AES-CCM beacon-frame
+  format, which `FE95` (also present on this device, SIG-registered to
+  Xiaomi/MiBeacon) hints could apply here too. Next useful probe: try
+  `FE95`'s `005E`/`005F` the same way (they're unauth'd and equally
+  unexplored), or sniff the official Mi Fitness/Xiaomi Wear iOS app's real
+  traffic to `FDAB` via a BLE HCI snoop, since further blind guessing on
+  `FDAB` in isolation hasn't produced a single byte back.
 
 ## 1. Transport
 
