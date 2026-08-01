@@ -1,0 +1,17 @@
+.env
+/reference/
+
+# Claude Code harness scaffolding, not part of this project
+/.claude/
+/.devcontainer/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+uv.lock.bak
+build/
+dist/
+*.egg-info/
+
+# generated protobuf bindings (regenerate from proto/ via grpcio-tools)
+src/miband/proto_gen/
