@@ -1,6 +1,10 @@
 .env
 /reference/
 
+# personal machine tooling, not project code -- was accidentally re-tracked
+# once already (commit 01d0267), keep it out for good
+/claude-switch.sh
+
 # Claude Code harness scaffolding, not part of this project
 /.claude/
 /.devcontainer/
@@ -15,3 +19,19 @@ dist/
 
 # generated protobuf bindings (regenerate from proto/ via grpcio-tools)
 src/miband/proto_gen/
+
+# Xcode / iOS (ios/MFiCheck) -- build output and per-user IDE state, never
+# committed. xcshareddata/xcschemes IS committed (needed by CI); only
+# xcuserdata (per-user) is ignored here.
+ios/**/build/
+ios/**/DerivedData/
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/**/.swiftpm/
+*.ipa
+*.xcarchive
+*.mobileprovision
+*.p12
+*.cer
+.DS_Store
+9ad0c977acd5c3e057846d82ac599126_upd_miwear.watch.o66gl.zip

@@ -30,16 +30,7 @@ def main() -> None:
     """Throwaway CLI for validating the Xiaomi Smart Band 10 protocol."""
 
 
-@main.command()
-@click.option(
-    "--timeout", default=10.0, show_default=True, help="Scan duration in seconds."
-)
-def scan(timeout: float) -> None:
-    """Discover nearby classic-Bluetooth devices and flag the Band 10."""
-    try:
-        devices = asyncio.run(transport.scan(timeout))
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
+def _print_devices(devices: list[transport.DiscoveredDevice]) -> None:
     if not devices:
         click.echo("No devices found.")
         return
@@ -50,6 +41,32 @@ def scan(timeout: float) -> None:
             else ""
         )
         click.echo(f"{device.address}  {device.name}{marker}")
+
+
+@main.command()
+@click.option(
+    "--timeout", default=10.0, show_default=True, help="Scan duration in seconds."
+)
+@click.option(
+    "--debug", is_flag=True, help="Print live watcher events/status to stderr."
+)
+@click.option(
+    "--paired",
+    is_flag=True,
+    help="List already-paired devices instead of discovering nearby ones. "
+    "Bypasses the Windows Location privacy gate -- use if pairing was "
+    "completed via Windows Settings but discovery finds nothing.",
+)
+def scan(timeout: float, debug: bool, paired: bool) -> None:
+    """Discover nearby classic-Bluetooth devices and flag the Band 10."""
+    try:
+        if paired:
+            devices = asyncio.run(transport.list_paired())
+        else:
+            devices = asyncio.run(transport.scan(timeout, debug=debug))
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _print_devices(devices)
 
 
 @main.command("auth-key")

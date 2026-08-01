@@ -1,0 +1,41 @@
+name: Build MFiCheck IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios/MFiCheck/**"
+      - ".github/workflows/mficheck-ipa.yml"
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: List schemes (debug aid)
+        run: xcodebuild -project ios/MFiCheck/MFiCheck.xcodeproj -list
+
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project ios/MFiCheck/MFiCheck.xcodeproj \
+            -scheme MFiCheck \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath build/MFiCheck.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/MFiCheck.xcarchive/Products/Applications/MFiCheck.app build/Payload/
+          cd build && zip -r MFiCheck.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MFiCheck-unsigned
+          path: build/MFiCheck.ipa
