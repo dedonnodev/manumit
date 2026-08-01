@@ -164,6 +164,23 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
     (including future cleartext Auth packets) just by having the official
     app active — useful for building up more fixtures before attempting
     our own handshake.
+- **[verified, `fixtures/session-20260801-235708.jsonl`, 2026-08-01]**
+  Second passive-listen capture, this time via `ios/MFiCheck`'s automatic
+  fixture logging (real monotonic timestamps, not reconstructed). Two new
+  confirmations:
+  - **raw_channel=5 (Activity) seen live for the first time** (records
+    seq 10-13, `opCode=ENCRYPTED`) — previously only `[from source,
+    untested]` in §2.3's channel table. Body stays opaque without session
+    keys, as expected; outer framing decodes cleanly
+    (`tests/test_protocol.py::test_decode_v2_activity_channel`).
+  - **Real BLE-notify fragmentation of a single SPP-V2 payload**, confirming
+    §2.3's "buffer bytes across reads" requirement isn't just theoretical:
+    record seq 9 declares a 599-byte payload, but the first `005E` notify
+    only delivers 487 of them (495 bytes total with the 8-byte header); the
+    remaining 112 bytes arrive as a second, separate notify event with no
+    header of its own. `decode_v2` correctly returns `None` on the first
+    chunk and completes once both are concatenated
+    (`tests/test_protocol.py::test_decode_v2_incomplete_until_second_ble_notify_chunk`).
 
 ## 1. Transport
 
@@ -278,6 +295,22 @@ vs SPP-V2 framing — only how the bytes get chunked onto the wire differs.
    (`XiaomiAuthService.java:88-95, 244-256`).
 2. **Watch → Phone:** `Command{type=1, subtype=26}` →
    `Auth.WatchNonce{nonce=watchNonce, hmac}` (`XiaomiAuthService.java:124-144`).
+   **[verified, offline decode of `fixtures/session-20260801-fe95-ble-v2.jsonl`
+   seq 6, 2026-08-01]** Decoded the captured plaintext Data packet
+   (`raw_channel=1` Protobuf, `opCode=1` PLAINTEXT) with `proto/xiaomi.proto`
+   compiled via `protobuf`/`grpcio-tools` (no guessing, no fixture edits —
+   this is the exact frame the band sent). `Command.type=1`,
+   `Command.subtype=26`, `Command.auth.watchNonce` present with a 16-byte
+   `nonce` (`1570e75f39bb2d0033b11178e2715141`) and a 32-byte `hmac`
+   (`b69e067177207892e98d6e6030ff578a069948f067f81d9b59426c94df196969`) —
+   field tags, lengths and nested-message shape match this spec byte for
+   byte. Values are single-use handshake nonces/HMACs from a session we're
+   not party to, not long-term secrets, so kept in the fixture and quoted
+   here. Two of the shortest `opCode=ENCRYPTED` Data packets in the same
+   capture (seq 11/12) were also decoded at the outer-framing level only:
+   `raw_channel=1`, `opCode=2`, 7-byte encrypted body — matches §2.3's Data
+   packet structure exactly; body stays opaque without the session key from
+   §3 step 3, as expected, and was not attacked.
 3. **Key derivation**, `computeAuthStep3Hmac()` (`XiaomiAuthService.java:258-290`):
    - `innerKey = HMAC-SHA256(key=phoneNonce||watchNonce, msg=secretKey)`
    - Expand: `block[0] = ""`; for `counter = 1, 2, 3...`:
