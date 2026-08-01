@@ -15,19 +15,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
-// Two one-shot diagnostics for whether the Band 10 is reachable from a
-// non-jailbroken iOS app at all:
+// One-shot diagnostics for whether/how the Band 10 is reachable from a
+// non-jailbroken iOS app:
 //
 // 1. EAAccessoryManager.connectedAccessories -- non-empty = MFi-registered,
 //    RFCOMM/SPP reachable via ExternalAccessory. Empty is NOT conclusive by
-//    itself: this property is filtered by this app's declared protocol
-//    strings in Info.plist (none declared here), so empty means either
-//    "not MFi" or "MFi but wrong/no protocol string".
-// 2. CBCentralManager BLE scan -- unlike EAAccessoryManager this has no MFi
-//    gate, CoreBluetooth can see any advertising BLE peripheral. If the
-//    Band 10 shows up here, it has a BLE side separate from the classic-BT
-//    RFCOMM interface Gadgetbridge uses on Android (docs/PROTOCOL.md §0),
-//    and that's the transport an iOS app would have to speak instead.
+//    itself: filtered by this app's declared protocol strings (none set).
+// 2. CBCentralManager BLE scan -- no MFi gate, sees any advertising BLE
+//    peripheral. Confirmed on real hardware: the Band 10 *does* advertise
+//    over BLE (contradicts docs/PROTOCOL.md §0, which assumed classic-BT
+//    only based on Gadgetbridge/Android source -- Android just never needed
+//    the BLE side). The advertisement carries no service list, so tap the
+//    row to connect and enumerate the real GATT table.
 
 import SwiftUI
 import ExternalAccessory
@@ -44,18 +43,32 @@ struct ContentView: View {
                 Text(mfiOutput)
                     .font(.system(.caption, design: .monospaced))
             }
-            .frame(maxHeight: 120)
+            .frame(maxHeight: 100)
             Button("Check connected accessories") { checkMFi() }
 
             Divider()
 
-            Text("BLE scan (CoreBluetooth)").font(.headline)
-            ScrollView {
-                Text(bleScanner.output)
-                    .font(.system(.caption, design: .monospaced))
+            Text("BLE scan (CoreBluetooth) -- tap a device to connect + enumerate GATT")
+                .font(.headline)
+            List(bleScanner.found) { item in
+                Button {
+                    bleScanner.connect(item)
+                } label: {
+                    Text("\(item.name)  rssi=\(item.rssi)  services=\(item.services)  mfg=\(item.mfgData)")
+                        .font(.system(.caption, design: .monospaced))
+                }
             }
+            .frame(maxHeight: 150)
             Button(bleScanner.isScanning ? "Stop scan" : "Start BLE scan") {
                 bleScanner.toggle()
+            }
+
+            Divider()
+
+            Text("GATT").font(.headline)
+            ScrollView {
+                Text(bleScanner.gattOutput)
+                    .font(.system(.caption, design: .monospaced))
             }
         }
         .padding()
@@ -80,12 +93,21 @@ struct ContentView: View {
     }
 }
 
-final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
-    @Published var output = "Tap per avviare lo scan."
+final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+    struct Found: Identifiable {
+        let id: UUID
+        var name: String
+        var rssi: Int
+        var services: String
+        var mfgData: String
+    }
+
+    @Published var found: [Found] = []
     @Published var isScanning = false
+    @Published var gattOutput = "Seleziona un dispositivo per connetterti."
 
     private var manager: CBCentralManager?
-    private var found: [UUID: (rssi: Int, line: String)] = [:]
+    private var peripherals: [UUID: CBPeripheral] = [:]
 
     func toggle() {
         if isScanning {
@@ -93,20 +115,28 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
             isScanning = false
             return
         }
-        found = [:]
-        output = "In attesa del radio Bluetooth..."
+        found = []
+        peripherals = [:]
+        gattOutput = "Seleziona un dispositivo per connetterti."
         manager = CBCentralManager(delegate: self, queue: nil)
+    }
+
+    func connect(_ item: Found) {
+        guard let peripheral = peripherals[item.id] else { return }
+        manager?.stopScan()
+        isScanning = false
+        gattOutput = "Connecting to \(item.name)..."
+        peripheral.delegate = self
+        manager?.connect(peripheral, options: nil)
     }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard central.state == .poweredOn else {
-            output = "Bluetooth non pronto: state=\(central.state.rawValue)"
+            gattOutput = "Bluetooth non pronto: state=\(central.state.rawValue)"
             return
         }
-        found = [:]
         central.scanForPeripherals(withServices: nil, options: nil)
         isScanning = true
-        output = "Scanning..."
     }
 
     func centralManager(
@@ -115,29 +145,60 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        peripherals[peripheral.identifier] = peripheral
+
         let name = peripheral.name ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? "(no name)"
         let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?
             .map(\.uuidString).joined(separator: ",") ?? "-"
-
-        var manufacturer = "-"
+        var mfg = "-"
         if let data = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data, data.count >= 2 {
-            // First 2 bytes = Bluetooth SIG company ID, little-endian; rest is
-            // vendor-specific payload. Cross-reference the ID against
-            // https://www.bluetooth.com/specifications/assigned-numbers/company-identifiers/
-            // -- not hardcoding a vendor name here since we haven't verified it.
             let companyId = UInt16(data[1]) << 8 | UInt16(data[0])
-            let hex = data.map { String(format: "%02X", $0) }.joined()
-            manufacturer = String(format: "companyId=0x%04X data=%@", companyId, hex)
+            mfg = String(format: "0x%04X", companyId)
         }
 
-        let rssi = RSSI.intValue
-        found[peripheral.identifier] = (
-            rssi: rssi,
-            line: "\(name)  rssi=\(rssi)  id=\(peripheral.identifier)  services=\(services)  mfgData=\(manufacturer)"
-        )
-        output = found.values
-            .sorted { $0.rssi > $1.rssi }
-            .map(\.line)
-            .joined(separator: "\n")
+        let entry = Found(id: peripheral.identifier, name: name, rssi: RSSI.intValue, services: services, mfgData: mfg)
+        if let idx = found.firstIndex(where: { $0.id == entry.id }) {
+            found[idx] = entry
+        } else {
+            found.append(entry)
+        }
+        found.sort { $0.rssi > $1.rssi }
+    }
+
+    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        gattOutput = "Connected to \(peripheral.name ?? "?"). Discovering services..."
+        peripheral.discoverServices(nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        gattOutput = "Connect failed: \(error?.localizedDescription ?? "unknown error")"
+    }
+
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        gattOutput += "\n\n[disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")]"
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard let services = peripheral.services, !services.isEmpty else {
+            gattOutput = "No GATT services (error: \(error?.localizedDescription ?? "none"))"
+            return
+        }
+        gattOutput = "Services found: \(services.count). Discovering characteristics..."
+        for service in services {
+            peripheral.discoverCharacteristics(nil, for: service)
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        let chars = (service.characteristics ?? []).map { c -> String in
+            var props: [String] = []
+            if c.properties.contains(.read) { props.append("read") }
+            if c.properties.contains(.write) { props.append("write") }
+            if c.properties.contains(.writeWithoutResponse) { props.append("writeNoResp") }
+            if c.properties.contains(.notify) { props.append("notify") }
+            if c.properties.contains(.indicate) { props.append("indicate") }
+            return "    \(c.uuid.uuidString)  [\(props.joined(separator: ","))]"
+        }.joined(separator: "\n")
+        gattOutput += "\n\nService \(service.uuid.uuidString):\n\(chars)"
     }
 }
