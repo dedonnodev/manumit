@@ -67,8 +67,8 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
   - **`FDAB`** — not a SIG-registered UUID (vendor-custom). Characteristics
     `0001` `[read]`, `0002` `[writeNoResp, notify]`, `0003` `[writeNoResp,
     notify]`. Same read + write/notify-pair shape as `FE95`. Best guess:
-    the actual Band 10 control/data channel — unverified, payload format
-    not yet reverse-engineered.
+    the actual Band 10 control/data channel — payload format not yet
+    reverse-engineered.
   - **`180F`** Battery Service → `2A19` Battery Level `[read, notify]`
     (standard GATT, no reverse-engineering needed).
   - **`180A`** Device Information Service → `2A50` PnP ID `[read]`
@@ -76,13 +76,28 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
   - **`180D`** Heart Rate Service → `2A37` Heart Rate Measurement
     `[notify]` (standard GATT — live heart rate is readable with zero
     proprietary protocol work).
-- Open question: is `FDAB`'s payload the same protobuf/framed-channel
+- **`FDAB` blind-probe result (`ios/MFiCheck`, 2026-08-01):**
+  - Reading `0001` returns a single byte: `01`. Too short to be a
+    protobuf/framed payload — looks like a status/capability flag, not a
+    data channel by itself.
+  - Subscribing notify on `0002`/`0003` succeeds (`isNotifying=true`), but
+    writing `writeNoResp` with an empty payload or a single `0x00` byte to
+    either characteristic produces **no notify response at all** — no ACK,
+    no error frame, nothing. Repeated twice, same result both times.
+  - Conclusion: `FDAB` doesn't echo/ACK arbitrary bytes, so it isn't a
+    dumb passthrough. Either it silently drops anything that isn't a
+    validly-framed packet (consistent with the SPP-style framing in §2 —
+    a bad preamble/CRC would just be discarded, not answered), or it
+    requires a prior handshake/auth step (mirroring §3's auth handshake
+    on the classic-BT side) before it responds to anything on `0002`/
+    `0003`.
+- Open question, now narrower: is `FDAB` the same protobuf/framed-channel
   protocol documented in §5-§6 for the classic-BT SPP stream, tunneled over
-  BLE writes/notifications instead, or a distinct encoding (Xiaomi's public
-  MiBeacon spec uses AES-CCM-encrypted beacon frames, which is a different
-  shape from the SPP framing in §2)? Needs a live capture of `FDAB` traffic
-  (e.g. sniff the official iOS app, or issue reads/writes from `MFiCheck`
-  and observe responses) before assuming §5/§6 apply unchanged.
+  BLE writes/notifications instead (§2's `BA DC FE`/`A5 A5` preambles), or a
+  distinct encoding? A blind empty/null write wasn't enough to tell — next
+  useful probe is writing an actual §2-shaped packet (preamble + minimal
+  header) at `0002`/`0003` and see if that's what finally provokes a
+  response, rather than more unstructured bytes.
 
 ## 1. Transport
 
