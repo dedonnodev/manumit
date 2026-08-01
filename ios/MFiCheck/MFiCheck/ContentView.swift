@@ -88,7 +88,8 @@ struct ContentView: View {
                     .font(.system(.caption, design: .monospaced))
             }
             HStack {
-                Button("Probe FDAB (write test payloads)") { bleScanner.probeFDAB() }
+                Button("Probe FDAB (blind bytes)") { bleScanner.probeFDAB() }
+                Button("Probe FDAB (SPP-V1 Version read)") { bleScanner.probeSppV1VersionRead() }
                 Button("Copy") { UIPasteboard.general.string = bleScanner.gattOutput }
             }
         }
@@ -283,6 +284,37 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
                 peripheral.writeValue(payload, for: char, type: .withoutResponse)
                 gattOutput += "\n[probe] wrote \(label) to \(charLabel): \(hexString(payload))"
             }
+        }
+    }
+
+    // The real first packet Gadgetbridge sends on classic-BT RFCOMM
+    // (docs/PROTOCOL.md §2.1/§2.2): SPP-V1-framed OPCODE_READ on the
+    // Version channel (channel id 0), plaintext, no payload. Preamble
+    // BA DC FE / epilogue EF. If FDAB tunnels the same SPP framing over
+    // BLE, this should provoke the same version-byte response.
+    private func buildSppV1VersionReadPacket() -> Data {
+        let channelId: UInt8 = 0x00       // Version
+        let flags: UInt8 = 0x40           // needsResponse
+        let opCode: UInt8 = 0x00          // READ
+        let frameSerial: UInt8 = 0x00
+        let dataType: UInt8 = 0x00        // PLAIN
+        let subHeaderLength: UInt16 = 3   // opCode + frameSerial + dataType, no payload
+        var packet = Data([0xBA, 0xDC, 0xFE, channelId, flags])
+        packet.append(UInt8(subHeaderLength & 0xFF))
+        packet.append(UInt8(subHeaderLength >> 8))
+        packet.append(contentsOf: [opCode, frameSerial, dataType, 0xEF])
+        return packet
+    }
+
+    func probeSppV1VersionRead() {
+        guard let peripheral = connectedPeripheral, let c2 = fdabChar0002Ref, let c3 = fdabChar0003Ref else {
+            gattOutput += "\n\n[probe] not connected, or FDAB 0002/0003 not discovered yet"
+            return
+        }
+        let packet = buildSppV1VersionReadPacket()
+        for (charLabel, char) in [("0002", c2), ("0003", c3)] {
+            peripheral.writeValue(packet, for: char, type: .withoutResponse)
+            gattOutput += "\n[probe] wrote SPP-V1 Version read to \(charLabel): \(hexString(packet))"
         }
     }
 }
