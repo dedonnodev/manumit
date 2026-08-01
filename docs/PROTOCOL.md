@@ -208,10 +208,34 @@ health/activity sync, notifications, weather, alarms, etc. Not reproduced
 here; read the `.proto` file directly, it's the source of truth and stays in
 sync with Phase 1 by construction (§ vendoring note in `proto/README.md`).
 
-Relevant top-level command types referenced elsewhere in this doc:
-- `type=1` Auth (§3)
-- `type=2` System (device info, battery — M3 "read device info" milestone)
-- `type=8` Health (activity fetch — §6, M4)
+### 5.1 Full command catalog
+
+**[from source, untested]** Every `COMMAND_TYPE` Gadgetbridge's Xiaomi
+implementation dispatches on, and the `CMD_` subtypes each service handles.
+One `AbstractXiaomiService` subclass per row, all under
+`service/devices/xiaomi/services/` unless noted. This is the complete
+command surface as reverse-engineered from Gadgetbridge — richer than what
+`docs/`'s own firmware exposes as its "official" MIoT spec (§8.3).
+
+| type | Service | Subtypes (`CMD_*`, decimal) | Citation |
+|---|---|---|---|
+| 1 | Auth | `SEND_USERID=5` `NONCE=26` `AUTH=27` | `XiaomiAuthService.java:66-68` (§3) |
+| 2 | System | `BATTERY=1` `DEVICE_INFO=2` `CLOCK=3` `FIRMWARE_INSTALL=5` `LANGUAGE=6` `CAMERA_REMOTE_GET=7` `CAMERA_REMOTE_SET=8` `PASSWORD_GET=9` `MISC_SETTING_GET=14` `MISC_SETTING_SET=15` `FIND_PHONE=17` `FIND_WATCH=18` `PASSWORD_SET=21` `DND_MODE_SET=23` `DISPLAY_ITEMS_GET=29` `DISPLAY_ITEMS_SET=30` `WORKOUT_TYPES_GET=39` `MISC_SETTING_SET_FROM_BAND=42` `SILENT_MODE_GET=43` `SILENT_MODE_SET_FROM_PHONE=44` `SILENT_MODE_SET_FROM_WATCH=45` `WIDGET_SCREENS_GET=51` `WIDGET_SCREENS_SET=52` `WIDGET_PARTS_GET=53` `DEVICE_STATE_GET=78` `DEVICE_STATE=79` | `XiaomiSystemService.java:76-101` |
+| 4 | Watchface | `LIST=0` `SET=1` `DELETE=2` `INSTALL=4` | `XiaomiWatchfaceService.java:43-46` |
+| 7 | Notification | `SEND=0` `DISMISS=1` `CALL_REJECT=2` `CALL_IGNORE=5` `SCREEN_ON_ON_NOTIFICATIONS_GET=6` `SCREEN_ON_ON_NOTIFICATIONS_SET=7` `OPEN_ON_PHONE=8` `CANNED_MESSAGES_GET=9` `CANNED_MESSAGES_SET=12` `CALL_REPLY_SEND=13` `CALL_REPLY_ACK=14` `NOTIFICATION_ICON_REQUEST=15` `NOTIFICATION_ICON_QUERY=16` | `XiaomiNotificationService.java:65-77` |
+| 8 | Health | `SET_USER_INFO=0` `ACTIVITY_FETCH_TODAY=1` `ACTIVITY_FETCH_PAST=2` `ACTIVITY_FETCH_REQUEST=3` `ACTIVITY_FETCH_ACK=5` `CONFIG_SPO2_GET=8` `CONFIG_SPO2_SET=9` `CONFIG_HEART_RATE_GET=10` `CONFIG_HEART_RATE_SET=11` `CONFIG_STANDING_REMINDER_GET=12` `CONFIG_STANDING_REMINDER_SET=13` `CONFIG_STRESS_GET=14` `CONFIG_STRESS_SET=15` `CONFIG_GOAL_NOTIFICATION_GET=21` `CONFIG_GOAL_NOTIFICATION_SET=22` `WORKOUT_WATCH_STATUS=26` `WORKOUT_WATCH_OPEN=30` `CONFIG_VITALITY_SCORE_GET=35` `CONFIG_VITALITY_SCORE_SET=36` `CONFIG_GOALS_GET=42` `CONFIG_GOALS_SET=43` `REALTIME_STATS_START=45` `REALTIME_STATS_STOP=46` `REALTIME_STATS_EVENT=47` `WORKOUT_LOCATION=48` | `XiaomiHealthService.java:71-95` (§6.2) |
+| 10 | Weather | `SET_CURRENT_WEATHER=0` `UPDATE_DAILY_FORECAST=1` `UPDATE_HOURLY_FORECAST=2` `REQUEST_CONDITIONS_FOR_LOCATION=3` `GET_LOCATIONS=5` `SET_LOCATIONS=6` `ADD_LOCATION=7` `REMOVE_LOCATIONS=8` `GET_WEATHER_PREFS=9` `SET_WEATHER_PREFS=10` | `XiaomiWeatherService.java:57-66` |
+| 12 | Calendar | `CALENDAR_SET=1` | `XiaomiCalendarService.java:41,43` |
+| 17 | Schedule | `ALARMS_GET=0` `ALARMS_CREATE=1` `ALARMS_EDIT=2` `ALARMS_DELETE=4` `SLEEP_MODE_GET=8` `SLEEP_MODE_SET=9` `WORLD_CLOCKS_GET=10` `WORLD_CLOCKS_SET=11` `REMINDERS_GET=14` `REMINDERS_CREATE=15` `REMINDERS_EDIT=17` `REMINDERS_DELETE=18` | `XiaomiScheduleService.java:60-71` |
+| 18 | Music | `MUSIC_GET=0` `MUSIC_SEND=1` `MUSIC_BUTTON=2` (button sub-values: play/pause/previous/next/volume) | `XiaomiMusicService.java:36-38` |
+| 20 | **Rpk (QuickApps)** | `RPK_LIST=0` `RPK_INSTALL/SET=1` `RPK_INSTALLED=2` `RPK_DELETE=3` | `XiaomiRpkService.java:45-49` (§8) |
+| 21 | Phonebook | `GET_CONTACT=2` `GET_CONTACT_RESPONSE=3` `ADD_CONTACT_LIST=5` `SET_CONTACT_LIST=7` | `XiaomiPhonebookService.java:43-46` |
+| 22 | DataUpload | `UPLOAD_START=0` | `XiaomiDataUploadService.java:40-42` |
+
+Not every subtype here is necessarily meaningful for the Band 10 specifically
+— this is Gadgetbridge's shared Xiaomi implementation, used across several
+device models. Treat as "commands the protocol *supports*", to be narrowed
+down as M1+ milestones confirm what this specific band actually accepts.
 
 ## 6. Activity record layout
 
@@ -298,6 +322,70 @@ Command type `8`, subtypes `CMD_ACTIVITY_FETCH_TODAY=1`,
 - Activity file format version 5 confirmed (via comment) for daily-summary;
   likely but not confirmed for sleep-details and daily-details.
 
+## 8. App management (QuickApps / RPK)
+
+**[from firmware analysis + source, untested]** Cross-checked against an
+actual OTA image, not just Gadgetbridge source: `upd_miwear.watch.o66gl.zip`
+(`ota.json`: `magic_string=o66`, `sw_version=3.2.7`), a local reference
+artifact — not committed to this repo, same treatment as
+`/reference/Gadgetbridge`. It's a Xiaomi Vela OS (NuttX) OTA package: a
+handful of raw MCU binaries (`vela_ap.bin` = main firmware, `vela_ota.bin` =
+bootloader) plus several `rom1fs` filesystem images (`app.bin`,
+`quickapp.bin`, `vendor.bin`, `system.bin`, `misc.bin`, `recovery.bin`,
+`watchface.bin`, `font.bin`, `i18n.bin`). `rom1fs` layout: 16-byte header
+(`-rom1fs-` + size + checksum) + null-terminated volume name, then
+16-byte-aligned file headers (`next|info|size|checksum` as big-endian
+`uint32`s + null-terminated name); low 4 bits of `next` encode
+type(3 bits)+executable-flag(1 bit), the rest is the next entry's absolute
+offset. For directories, `info` is the child listing's offset; for plain
+files, `info` is unused — data starts right after the name, padded to 16
+bytes.
+
+**Two different kinds of "app" exist, and only one is deletable over the
+protocol:**
+
+- **Built-in native apps** — alarm, sports, weather, compass, sleep,
+  flashlight, etc. 50+ top-level directories in `app.bin` (icons/widgets/
+  launcher assets per app), with the executable code itself compiled into
+  `vela_ap.bin`. No delete/uninstall command exists anywhere in
+  Gadgetbridge's Xiaomi implementation for these — they ship as part of the
+  firmware image and can only change via a full OTA reflash (`type=2`
+  `CMD_FIRMWARE_INSTALL=5`, §5.1). **Not removable from a companion app.**
+- **QuickApps** — `.rpk` packages, managed by command `type=20` (§5.1):
+  `RPK_LIST` / `RPK_INSTALL` / `RPK_DELETE` (`XiaomiRpkService.java:43-49`).
+  `deleteRpk()` sends `Command{type=20, subtype=3}` →
+  `Rpk.RpkInfoList{id=packageName, sha}`, no response expected — the phone
+  just re-requests the list immediately after
+  (`XiaomiRpkService.java:104-124`). `installRpk()` sends
+  `Command{type=20, subtype=1}` → `Rpk.RpkInfo{id, versionCode, size}`, then
+  streams the `.rpk` bytes over the data-upload channel (`type=22`,
+  §5.1) once the watch acks (`XiaomiRpkService.java:132-149`).
+
+This build's `quickapp.bin` contains exactly one bundled QuickApp,
+`com.xiaomi.smarthome.watch` v1.0.1 (415599-byte `.rpk`, a zip — `PK\x03\x04`
+magic, `META-INF/` inside — presumably signed). `/rpk_info.json` inside that
+same image additionally lists QuickApps the platform *supports* but doesn't
+ship in this build: `com.baidu.BaiduMap` (Baidu Maps), `com.vela.calculator`,
+`com.kugou.xiaomi` (KuGou Music), `com.tencent.wechatrtos` (WeChat),
+`com.netease.vela` (NetEase Cloud Music) — installable the same way via
+`RPK_INSTALL`.
+
+**Practical answer:** yes, QuickApps can be listed/installed/deleted from a
+companion app (§5.1 `type=20`); no, the built-in system apps cannot.
+
+### 8.1 Device spec (MIoT)
+
+`misc.bin:/spec/spec_config.json` (30359 bytes) is the device's official
+MIoT cloud-spec: `type: urn:miot-spec-v2:device:watch:0000A07C:miwear-o66nfc:1`
+— `o66nfc` matches the OTA package's `o66gl` codename, confirming this spec
+belongs to this exact device. 8 services: device-information, vital-signs,
+motion-data, battery, sleep, device-status, vibration,
+wear-car-interconnect — each with typed `properties`/`actions`/`events`
+(iid-addressed). This is the subset Xiaomi exposes to its own cloud
+integration; it's **not** a substitute for §5.1 — the local RFCOMM protocol
+exposes far more (QuickApp management, watchfaces, phonebook, calendar, full
+health config) than this cloud spec covers.
+
 ## 1a. Discovery (Windows, WinRT — not from Gadgetbridge source)
 
 **[from WinRT platform knowledge, untested]** Android's Bluetooth classic
@@ -332,3 +420,8 @@ is the first thing to question — report back exactly what `scan` prints
   and if so reverse-engineer the layout Gadgetbridge doesn't handle.
 - Confirm GATT is truly absent (no fallback BLE service exposed) when
   scanning — expected per §0, but M1 should verify empirically.
+- Confirm `RPK_LIST` (§8) actually returns `com.xiaomi.smarthome.watch` on
+  the real band, and that `RPK_DELETE` is accepted (not just for
+  Gadgetbridge's supported device set — this app is a factory default,
+  which some vendors block from deletion despite the generic command
+  existing).
