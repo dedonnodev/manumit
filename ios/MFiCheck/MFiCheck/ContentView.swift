@@ -31,6 +31,7 @@
 import SwiftUI
 import ExternalAccessory
 import CoreBluetooth
+import UIKit
 
 struct ContentView: View {
     @State private var mfiOutput = "Tap per controllare."
@@ -56,7 +57,10 @@ struct ContentView: View {
                     .font(.system(.caption, design: .monospaced))
             }
             .frame(maxHeight: 100)
-            Button("Check connected accessories") { checkMFi() }
+            HStack {
+                Button("Check connected accessories") { checkMFi() }
+                Button("Copy") { UIPasteboard.general.string = mfiOutput }
+            }
 
             Divider()
 
@@ -82,6 +86,10 @@ struct ContentView: View {
             ScrollView {
                 Text(bleScanner.gattOutput)
                     .font(.system(.caption, design: .monospaced))
+            }
+            HStack {
+                Button("Probe FDAB (write test payloads)") { bleScanner.probeFDAB() }
+                Button("Copy") { UIPasteboard.general.string = bleScanner.gattOutput }
             }
         }
         .padding()
@@ -121,6 +129,19 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
 
     private var manager: CBCentralManager?
     private var peripherals: [UUID: CBPeripheral] = [:]
+    private var connectedPeripheral: CBPeripheral?
+
+    // Vendor-custom service, unverified payload -- see docs/PROTOCOL.md §0a.
+    private static let fdabService = CBUUID(string: "FDAB")
+    private static let fdabChar0001 = CBUUID(string: "0001")
+    private static let fdabChar0002 = CBUUID(string: "0002")
+    private static let fdabChar0003 = CBUUID(string: "0003")
+    private var fdabChar0002Ref: CBCharacteristic?
+    private var fdabChar0003Ref: CBCharacteristic?
+
+    private func hexString(_ data: Data) -> String {
+        data.isEmpty ? "(empty)" : data.map { String(format: "%02X", $0) }.joined(separator: " ")
+    }
 
     func toggle() {
         if isScanning {
@@ -179,6 +200,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        connectedPeripheral = peripheral
         gattOutput = "Connected to \(peripheral.name ?? "?"). Discovering services..."
         peripheral.discoverServices(nil)
     }
@@ -213,5 +235,54 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             return "    \(c.uuid.uuidString)  [\(props.joined(separator: ","))]"
         }.joined(separator: "\n")
         gattOutput += "\n\nService \(service.uuid.uuidString):\n\(chars)"
+
+        guard service.uuid == Self.fdabService else { return }
+        for c in service.characteristics ?? [] {
+            switch c.uuid {
+            case Self.fdabChar0001:
+                peripheral.readValue(for: c)
+            case Self.fdabChar0002:
+                fdabChar0002Ref = c
+                peripheral.setNotifyValue(true, for: c)
+            case Self.fdabChar0003:
+                fdabChar0003Ref = c
+                peripheral.setNotifyValue(true, for: c)
+            default:
+                break
+            }
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            gattOutput += "\n[\(characteristic.uuid.uuidString)] error: \(error.localizedDescription)"
+            return
+        }
+        gattOutput += "\n[\(characteristic.uuid.uuidString)] \(hexString(characteristic.value ?? Data()))"
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            gattOutput += "\n[\(characteristic.uuid.uuidString)] notify subscribe error: \(error.localizedDescription)"
+        } else {
+            gattOutput += "\n[\(characteristic.uuid.uuidString)] notify subscribed=\(characteristic.isNotifying)"
+        }
+    }
+
+    // Test payloads for the unverified FDAB channel: empty write and a
+    // single null byte, to see whether either provokes a structured
+    // response (ACK, error frame, etc.) on the notify characteristics.
+    func probeFDAB() {
+        guard let peripheral = connectedPeripheral, let c2 = fdabChar0002Ref, let c3 = fdabChar0003Ref else {
+            gattOutput += "\n\n[probe] not connected, or FDAB 0002/0003 not discovered yet"
+            return
+        }
+        let payloads: [(String, Data)] = [("empty", Data()), ("null byte", Data([0x00]))]
+        for (label, payload) in payloads {
+            for (charLabel, char) in [("0002", c2), ("0003", c3)] {
+                peripheral.writeValue(payload, for: char, type: .withoutResponse)
+                gattOutput += "\n[probe] wrote \(label) to \(charLabel): \(hexString(payload))"
+            }
+        }
     }
 }
