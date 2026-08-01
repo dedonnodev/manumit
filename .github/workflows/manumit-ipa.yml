@@ -1,0 +1,41 @@
+name: Build Manumit IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios/Manumit/**"
+      - ".github/workflows/manumit-ipa.yml"
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: List schemes (debug aid)
+        run: xcodebuild -project ios/Manumit/Manumit.xcodeproj -list
+
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project ios/Manumit/Manumit.xcodeproj \
+            -scheme Manumit \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath build/Manumit.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/Manumit.xcarchive/Products/Applications/Manumit.app build/Payload/
+          cd build && zip -r Manumit.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Manumit-unsigned
+          path: build/Manumit.ipa
