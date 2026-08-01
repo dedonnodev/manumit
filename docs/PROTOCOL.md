@@ -127,12 +127,43 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
   - This means the earlier `BA DC FE`-framed probe (previous entry) was
     doubly wrong: wrong characteristic (`FDAB` vs `FE95`) *and* wrong
     framing version (SPP-V1 vs SPP-V2) *and* wrong first message
-    (Version-read vs StartSessionRequest). Not yet tried on hardware.
+    (Version-read vs StartSessionRequest).
   - `XiaomiUuids.java:33-46` also documents an older **BLE-V1** scheme
     (`FE95` again, but characteristics `0051`/`0052`/`0053`/`0055`, used by
     Mi Band 8/Redmi Watch 3 Active/etc., encrypted from the start) — doesn't
     match this device's characteristic list at all, so BLE-V2 is the one to
     try.
+- **[verified on hardware, `ios/MFiCheck`, 2026-08-01]** BLE-V2/SPP-V2
+  confirmed correct, byte-for-byte, no guessing left. Raw capture:
+  `fixtures/session-20260801-fe95-ble-v2.jsonl`.
+  - Sent the exact `StartSessionRequest` packet from the previous entry to
+    `005F`. Got back a real `SessionConfig` `START_SESSION_RESPONSE` (opcode
+    `02`) on `005E`: `VERSION=03 00 41`, `MAX_PACKET_SIZE=0x8000` (32768,
+    not the requested `0xfc00`), `TX_WIN=3` (not the requested `0x0020`),
+    `SEND_TIMEOUT=0x3E80` (16000ms, not the requested `0x2710`) — device
+    negotiates its own values back, doesn't just echo the request.
+  - **Unexpected, and useful:** the *instant* notify was enabled on `005E`
+    — before any request of ours went out — the band started streaming
+    fully-formed SPP-V2 frames unprompted: ACKs, an unencrypted `Command
+    {type=1, subtype=26}` → `Auth.WatchNonce` (protobuf `08 01 10 1A 1A
+    37 ...`, matches §3 step 2 exactly, live confirmation of that
+    protobuf shape), and ~25 `Data`/`ProtobufCommand`-channel packets with
+    `opCode=ENCRYPTED` (can't decode payload without session keys, but the
+    outer framing — channel nibble, opcode, SPP-V2 header — matches
+    §2.3/§5 predictions exactly). Working theory: the band was already in
+    an active, authenticated BLE session with something else (the official
+    Mi Fitness/Xiaomi Wear app, likely backgrounded on the same iPhone or
+    paired previously) at the GATT-firmware level, and simply fans out
+    `005E` notifications to *every* subscribed central regardless of which
+    one it authenticated with — i.e. **the notify characteristic isn't
+    session-scoped**, any app that subscribes gets to watch the live
+    encrypted traffic. That's how we captured a real, in-the-wild Auth
+    exchange without writing a single byte ourselves.
+  - Practical consequence for Phase 1: passively subscribing to `005E` and
+    logging is a legitimate, zero-risk way to harvest more real traffic
+    (including future cleartext Auth packets) just by having the official
+    app active — useful for building up more fixtures before attempting
+    our own handshake.
 
 ## 1. Transport
 
