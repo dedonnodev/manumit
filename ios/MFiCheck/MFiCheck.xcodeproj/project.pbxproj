@@ -10,6 +10,7 @@
 		AA0000000000000000000021 /* MFiCheckApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* MFiCheckApp.swift */; };
 		AA0000000000000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* ContentView.swift */; };
 		AA0000000000000000000023 /* ExternalAccessory.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* ExternalAccessory.framework */; };
+		AA0000000000000000000024 /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* CoreBluetooth.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +18,7 @@
 		AA0000000000000000000011 /* MFiCheckApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MFiCheckApp.swift; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000013 /* ExternalAccessory.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ExternalAccessory.framework; path = System/Library/Frameworks/ExternalAccessory.framework; sourceTree = SDKROOT; };
+		AA0000000000000000000014 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -25,6 +27,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000000000000000000023 /* ExternalAccessory.framework in Frameworks */,
+				AA0000000000000000000024 /* CoreBluetooth.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -61,6 +64,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000013 /* ExternalAccessory.framework */,
+				AA0000000000000000000014 /* CoreBluetooth.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -195,6 +199,8 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MFiCheck;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Used to scan for the Band 10 (diagnostic tool, not for release).";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Used to scan for the Band 10 (diagnostic tool, not for release).";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -223,6 +229,8 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MFiCheck;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Used to scan for the Band 10 (diagnostic tool, not for release).";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Used to scan for the Band 10 (diagnostic tool, not for release).";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;

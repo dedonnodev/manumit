@@ -15,40 +15,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
-// One-shot diagnostic: is the Band 10 visible to EAAccessoryManager after
-// pairing via Settings? Non-empty result = MFi-visible, RFCOMM reachable
-// from a third-party app. Empty result alone doesn't rule that out --
-// connectedAccessories is filtered by this app's declared protocol strings
-// in Info.plist (none declared here), so empty just means "try again once
-// we know the protocol string" as well as "not MFi at all".
+// Two one-shot diagnostics for whether the Band 10 is reachable from a
+// non-jailbroken iOS app at all:
+//
+// 1. EAAccessoryManager.connectedAccessories -- non-empty = MFi-registered,
+//    RFCOMM/SPP reachable via ExternalAccessory. Empty is NOT conclusive by
+//    itself: this property is filtered by this app's declared protocol
+//    strings in Info.plist (none declared here), so empty means either
+//    "not MFi" or "MFi but wrong/no protocol string".
+// 2. CBCentralManager BLE scan -- unlike EAAccessoryManager this has no MFi
+//    gate, CoreBluetooth can see any advertising BLE peripheral. If the
+//    Band 10 shows up here, it has a BLE side separate from the classic-BT
+//    RFCOMM interface Gadgetbridge uses on Android (docs/PROTOCOL.md §0),
+//    and that's the transport an iOS app would have to speak instead.
 
 import SwiftUI
 import ExternalAccessory
+import CoreBluetooth
 
 struct ContentView: View {
-    @State private var output = "Tap per controllare."
+    @State private var mfiOutput = "Tap per controllare."
+    @StateObject private var bleScanner = BLEScanner()
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("MFi (ExternalAccessory)").font(.headline)
             ScrollView {
-                Text(output)
-                    .font(.system(.body, design: .monospaced))
-                    .padding()
+                Text(mfiOutput)
+                    .font(.system(.caption, design: .monospaced))
             }
-            Button("Check connected accessories") {
-                check()
+            .frame(maxHeight: 120)
+            Button("Check connected accessories") { checkMFi() }
+
+            Divider()
+
+            Text("BLE scan (CoreBluetooth)").font(.headline)
+            ScrollView {
+                Text(bleScanner.output)
+                    .font(.system(.caption, design: .monospaced))
+            }
+            Button(bleScanner.isScanning ? "Stop scan" : "Start BLE scan") {
+                bleScanner.toggle()
             }
         }
-        .onAppear(perform: check)
+        .padding()
+        .onAppear(perform: checkMFi)
     }
 
-    func check() {
+    func checkMFi() {
         let accessories = EAAccessoryManager.shared().connectedAccessories
         if accessories.isEmpty {
-            output = "connectedAccessories: EMPTY\n(0 accessori visibili come MFi)"
+            mfiOutput = "connectedAccessories: EMPTY\n(0 accessori visibili come MFi)"
             return
         }
-        output = accessories.map { acc in
+        mfiOutput = accessories.map { acc in
             """
             name: \(acc.name)
             manufacturer: \(acc.manufacturer)
@@ -57,5 +77,48 @@ struct ContentView: View {
             connectionID: \(acc.connectionID)
             """
         }.joined(separator: "\n---\n")
+    }
+}
+
+final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
+    @Published var output = "Tap per avviare lo scan."
+    @Published var isScanning = false
+
+    private var manager: CBCentralManager?
+    private var found: [UUID: String] = [:]
+
+    func toggle() {
+        if isScanning {
+            manager?.stopScan()
+            isScanning = false
+            return
+        }
+        found = [:]
+        output = "In attesa del radio Bluetooth..."
+        manager = CBCentralManager(delegate: self, queue: nil)
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard central.state == .poweredOn else {
+            output = "Bluetooth non pronto: state=\(central.state.rawValue)"
+            return
+        }
+        found = [:]
+        central.scanForPeripherals(withServices: nil, options: nil)
+        isScanning = true
+        output = "Scanning..."
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
+        let name = peripheral.name ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? "(no name)"
+        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?
+            .map(\.uuidString).joined(separator: ",") ?? "-"
+        found[peripheral.identifier] = "\(name)  rssi=\(RSSI)  id=\(peripheral.identifier)  services=\(services)"
+        output = found.values.sorted().joined(separator: "\n")
     }
 }
