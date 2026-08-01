@@ -93,6 +93,9 @@ struct ContentView: View {
                 Button("Probe FE95 (SPP-V2 StartSession)") { bleScanner.probeBleV2StartSession() }
                 Button("Copy") { UIPasteboard.general.string = bleScanner.gattOutput }
             }
+            if let fixtureURL = bleScanner.fixtureURL {
+                ShareLink("Export fixture (\(fixtureURL.lastPathComponent))", item: fixtureURL)
+            }
         }
         .padding()
         .onAppear(perform: checkMFi)
@@ -149,8 +152,95 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     private static let ble2WriteChar = CBUUID(string: "005F") // write (phone -> device)
     private var ble2WriteRef: CBCharacteristic?
 
+    // Automatic fixture logging (CLAUDE.md "Instrumentation": every
+    // BLE frame gets a jsonl record -- direction, raw hex, monotonic
+    // timestamp, decoded interpretation once known). Written to the app's
+    // Documents dir, exported via the Share button once a session exists.
+    @Published var fixtureURL: URL?
+    private var fixtureHandle: FileHandle?
+    private var fixtureSessionStart: TimeInterval?
+
     private func hexString(_ data: Data) -> String {
         data.isEmpty ? "(empty)" : data.map { String(format: "%02X", $0) }.joined(separator: " ")
+    }
+
+    private func startFixtureSession(deviceName: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("session-\(formatter.string(from: Date())).jsonl")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        fixtureHandle = try? FileHandle(forWritingTo: url)
+        fixtureSessionStart = ProcessInfo.processInfo.systemUptime
+
+        writeFixtureLine([
+            "meta": true,
+            "device": deviceName,
+            "captured_via": "ios/MFiCheck",
+            "date": ISO8601DateFormatter().string(from: Date()),
+        ])
+
+        DispatchQueue.main.async { self.fixtureURL = url }
+    }
+
+    private func stopFixtureSession() {
+        try? fixtureHandle?.close()
+        fixtureHandle = nil
+        fixtureSessionStart = nil
+    }
+
+    private func writeFixtureLine(_ record: [String: Any]) {
+        guard let handle = fixtureHandle,
+              let json = try? JSONSerialization.data(withJSONObject: record),
+              var line = String(data: json, encoding: .utf8) else { return }
+        line += "\n"
+        handle.write(line.data(using: .utf8) ?? Data())
+    }
+
+    private func logFrame(direction: String, characteristic: CBUUID, data: Data? = nil, event: String? = nil) {
+        guard let start = fixtureSessionStart else { return }
+        var record: [String: Any] = [
+            "t": ProcessInfo.processInfo.systemUptime - start,
+            "direction": direction,
+            "characteristic": characteristic.uuidString,
+        ]
+        if let data = data {
+            record["hex"] = hexString(data)
+            if let decoded = decodeSppV2Header(data) {
+                record["decoded"] = decoded
+            }
+        }
+        if let event = event {
+            record["event"] = event
+        }
+        writeFixtureLine(record)
+    }
+
+    // Decodes the SPP-V2 outer header (docs/PROTOCOL.md §2.3) when present,
+    // for both FE95's 005E/005F and (in case FDAB turns out to share the
+    // framing after all) FDAB's 0002/0003.
+    private func decodeSppV2Header(_ data: Data) -> [String: Any]? {
+        guard data.count >= 8, data[data.startIndex] == 0xA5, data[data.startIndex + 1] == 0xA5 else { return nil }
+        let bytes = [UInt8](data)
+        let packetType = bytes[2] & 0x0F
+        let sequence = bytes[3]
+        let length = Int(bytes[4]) | (Int(bytes[5]) << 8)
+        let checksum = Int(bytes[6]) | (Int(bytes[7]) << 8)
+        let payload = bytes[8...]
+        let packetTypeNames: [UInt8: String] = [1: "ACK", 2: "SessionConfig", 3: "Data"]
+        var decoded: [String: Any] = [
+            "packet_type": packetTypeNames[packetType] ?? Int(packetType),
+            "sequence": Int(sequence),
+            "declared_length": length,
+            "checksum": checksum,
+            "actual_payload_len": payload.count,
+        ]
+        if packetType == 3, payload.count >= 2 {
+            decoded["raw_channel"] = Int(payload[payload.startIndex]) & 0xF
+            let opCode = payload[payload.startIndex + 1]
+            decoded["op_code"] = opCode == 1 ? "PLAINTEXT" : (opCode == 2 ? "ENCRYPTED" : Int(opCode))
+        }
+        return decoded
     }
 
     func toggle() {
@@ -212,6 +302,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         connectedPeripheral = peripheral
         gattOutput = "Connected to \(peripheral.name ?? "?"). Discovering services..."
+        startFixtureSession(deviceName: peripheral.name ?? "?")
         peripheral.discoverServices(nil)
     }
 
@@ -221,6 +312,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         gattOutput += "\n\n[disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")]"
+        stopFixtureSession()
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
@@ -283,7 +375,9 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             gattOutput += "\n[\(characteristic.uuid.uuidString)] error: \(error.localizedDescription)"
             return
         }
-        gattOutput += "\n[\(characteristic.uuid.uuidString)] \(hexString(characteristic.value ?? Data()))"
+        let value = characteristic.value ?? Data()
+        gattOutput += "\n[\(characteristic.uuid.uuidString)] \(hexString(value))"
+        logFrame(direction: "rx", characteristic: characteristic.uuid, data: value)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
@@ -291,6 +385,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             gattOutput += "\n[\(characteristic.uuid.uuidString)] notify subscribe error: \(error.localizedDescription)"
         } else {
             gattOutput += "\n[\(characteristic.uuid.uuidString)] notify subscribed=\(characteristic.isNotifying)"
+            logFrame(direction: "event", characteristic: characteristic.uuid, event: "notify subscribed=\(characteristic.isNotifying)")
         }
     }
 
@@ -307,6 +402,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             for (charLabel, char) in [("0002", c2), ("0003", c3)] {
                 peripheral.writeValue(payload, for: char, type: .withoutResponse)
                 gattOutput += "\n[probe] wrote \(label) to \(charLabel): \(hexString(payload))"
+                logFrame(direction: "tx", characteristic: char.uuid, data: payload)
             }
         }
     }
@@ -339,6 +435,7 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         for (charLabel, char) in [("0002", c2), ("0003", c3)] {
             peripheral.writeValue(packet, for: char, type: .withoutResponse)
             gattOutput += "\n[probe] wrote SPP-V1 Version read to \(charLabel): \(hexString(packet))"
+            logFrame(direction: "tx", characteristic: char.uuid, data: packet)
         }
     }
 
@@ -399,5 +496,6 @@ final class BLEScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         let packet = buildSppV2Packet(packetType: 2, sequenceNumber: 0, payload: buildSessionConfigStartRequestPayload())
         peripheral.writeValue(packet, for: writeChar, type: .withoutResponse)
         gattOutput += "\n[probe] wrote SPP-V2 StartSessionRequest to 005F: \(hexString(packet))"
+        logFrame(direction: "tx", characteristic: writeChar.uuid, data: packet)
     }
 }
