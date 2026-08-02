@@ -622,6 +622,136 @@ integration; it's **not** a substitute for §5.1 — the local RFCOMM protocol
 exposes far more (QuickApp management, watchfaces, phonebook, calendar, full
 health config) than this cloud spec covers.
 
+### 8.2 Internal services and OTA signing (firmware analysis + disassembly)
+
+**[from firmware analysis, untested]** `strings` pass over `vela_ap.bin`
+(main firmware) and `vela_ota.bin` (bootloader), same OTA package as §8,
+plus a targeted disassembly of `vela_ota.bin` (below) to settle the
+CRC-vs-signature question.
+
+**Internal daemons (not BLE commands).** The init script embedded in
+`vela_ap.bin` starts `miwear_bluetooth`, `miwear_algo_service`,
+`miwear_activity_service`, `miwear_capture_service`, `miwear_healthd`,
+`nfc_stack_bridge`, `miconnect` as separate processes. These are on-device
+process names, not wire-protocol commands — no COMMAND_TYPE in §5.1 maps to
+them directly. `miwear_capture_service` is the one worth revisiting later:
+plausibly tied to `CAMERA_REMOTE_GET/SET` (System type=2, subtypes 7/8) but
+unconfirmed without disasm.
+
+**AIOTJS QuickApp runtime crypto.** The JS engine backing QuickApps
+(`AIOTJS`) exposes `crypto.sign`/`crypto.verify`/`crypto.rsa` to app code
+(mbedtls-backed, `[crypto:%d]mbedtls_pk_sign`/`rsa verify` log strings).
+This is a scripting API surface for QuickApps themselves, unrelated to the
+BLE command catalog or to OTA.
+
+**Account bind/login FSM — genuine doc gap.** Strings
+`MIWEAR_LOCAL_BIND_FSM_WAIT_APP_VERIFY` / `MIWEAR_LOGIN_FSM_WAIT_APP_VERIFY`
+plus `device_sign`/`app_sign`/`bind_sign` fields point to a separate
+challenge-response flow for binding/logging the band to a Xiaomi account,
+distinct from the local pairing handshake in §3. Not covered anywhere in
+this doc. Only relevant if the iOS app ever needs native Xiaomi-account
+login instead of the one-time key extraction CLAUDE.md already describes.
+
+**OTA image signing — confirmed checksum-only in `vela_ota.bin`, no
+on-device signature verification found.** Looked for where the band
+enforces "only signed firmware" (a common Xiaomi-cloud claim): `vela_ota.bin`
+(the bootloader, i.e. the code that actually flashes `vela_ap.bin`)
+contains `header crc mismatch` and `firmware_checksum == bin_data.checksum`
+but **zero** RSA/verify/cert/sha strings anywhere in the whole binary.
+`ota.json` lists an `md5sum` per section — a corruption check, not a
+signature. The only RSA/mbedtls sign-verify machinery found (`app_verify.c`,
+`app_verify_info`, `app_block_digest_verification`) lives in `vela_ap.bin`
+(a separate binary/address space) and is scoped to **QuickApp `.rpk`
+package verification at install time**, not the main OTA image. No
+`.pem`/`.crt`/public-key file exists in any of the extracted `rom1fs`
+filesystems either.
+
+**Disassembly, not just strings** (Capstone, Thumb-2, raw headerless
+binary — no ELF, no symbol table, so the load base first had to be
+recovered): cross-referenced all 8034 `LDR Rd, [PC, #imm]` literal-pool
+loads in `vela_ota.bin` against the offsets of its 4478 ASCII strings;
+base `0x2c020000` accounted for 2461 of them (next-best candidate: 220 —
+not a close call). That pins every string's absolute address without
+guessing.
+
+- The single instruction that loads `"header crc mismatch"`
+  (`0x2c0502cc`) sits at the end of a bit-by-bit accumulator loop
+  (`lsls`/`add` over a 32-iteration `cmp r5,#0x1f` counter, file offset
+  ~`0x2c050260`–`0x2c05033c`) — the textbook shape of a software CRC-32
+  computed one bit at a time, not a call into any hash/signature routine.
+- The code around the `"check_ota_files"` name (`0x2c0541b8` and
+  neighbourhood) walks the JSON section list from `ota.json`, repeatedly
+  calling what's structurally a field-getter (`bl 0x2c058370`) and a
+  string-compare (`bl 0x2c086648`) to pull out `location_path`/`md5sum` per
+  section — matching `ota.json`'s own schema (§8) field-for-field.
+- No call target anywhere in either window (or reachable from them) lands
+  outside `vela_ota.bin`'s own `0x2c020000`–`0x2c0a0000`-ish span, and the
+  binary has no RSA/SHA strings to begin with — there's nothing here to
+  call into even if it wanted to.
+
+**Conclusion:** the bootloader's local flash-acceptance path is CRC/MD5
+integrity-only; it does not re-verify a cryptographic signature on the
+firmware image itself. If "Mi Band accepts only signed firmware" holds at
+all, the signing/verification has to happen upstream of this binary —
+Xiaomi's account-authenticated HTTPS delivery of the OTA package to the
+phone (Mi Fitness / Xiaomi Wear app), with the already-verified §3 BLE
+pairing handshake as the transport trust boundary from phone to band —
+not a check this bootloader performs itself. Residual uncertainty: this
+covers `vela_ota.bin` only; `vela_ap.bin` (the main firmware) has its own
+independent code (and does contain RSA/mbedtls, just wired to QuickApp
+verification as shown above) that hasn't been disassembled for an OTA-image
+check specifically.
+
+### 8.3 Hardware identification (external reference, not this repo's own work)
+
+**[external source, not verified by this project]** A third-party hobbyist
+project, [atc1441/MiBand10-BES2700iMP-BEST1503-Hacking](https://github.com/atc1441/MiBand10-BES2700iMP-BEST1503-Hacking)
+(101 stars, updated 2026-07-31), independently reverse-engineered the Mi
+Band 10's application SoC and built a from-scratch replacement firmware
+SDK (it even runs DOOM). Treat this the same way as `/reference/Gadgetbridge`
+— an external reference to read and cross-check against, not a dependency to
+vendor: **no license is declared on the repo** (GitHub reports `license:
+None`, i.e. all-rights-reserved by default), and its own SDK foundation is
+built on a "leaked" vendor SDK (BEST1306/BES2700IHC audio SDK) plus a
+separately leaked flashing tool — provenance is murkier than this repo's
+clean-room Gadgetbridge-based protocol work, so nothing from it should be
+copied into Manumit's source.
+
+Facts worth keeping as reference:
+
+- Main SoC: **BES2700iMP**, BES's internal name **BEST1503** (Cortex-M33).
+  Same chip family also ships as BES2700IHC/BEST1306 in audio products
+  (TWS earbuds) — that sibling's leaked SDK is what their build starts from.
+- On-chip SRAM is **1.4 MB** (`0x160000`), not the 512 KB the generic
+  BEST1306 headers claim; flash is **4 MB**, not 2 MB. Confirmed against a
+  RAM dump of the running chip.
+- Display: **Raydium RM690B0/C0 AMOLED**, ~212×520, driven over a 4-lane
+  hardware Quad-SPI path — traced register-by-register directly out of
+  `vela_ota.bin`/`vela_ap.bin` (the same two binaries analysed in §8.2).
+- Touch: **Hynitron CST92xx** capacitive controller, I²C address `0x5A`.
+- Toolchain: **`arm-none-eabi-gcc` 10.3.x** — consistent with the
+  `arm-none-eabi-gcc-9.2.1` banner already found in `vela_ap.bin`'s Goodix
+  DSP object paths (§8.2); different subsystems of the stock firmware were
+  evidently built with slightly different point releases of the same
+  toolchain family, nothing exotic.
+- Their flashing path is **UART over physical test pads**, using a
+  SecondStage bootloader blob recovered from a separate leak — a
+  manufacturing/debug channel, not the BLE `CMD_FIRMWARE_INSTALL` path in
+  §5.1/§8. It bypasses whatever OTA gate exists entirely rather than
+  answering whether that BLE path is signature-checked; it doesn't
+  contradict or confirm the §8.2 conclusion, it's just a different door.
+- Their own custom OTA/flash driver (in-system NOR erase/write/verify, no
+  spare-sector signature check either) matches what §8.2 found: nothing
+  in this hardware family's flashing story does asymmetric signature
+  verification at the point of writing flash — only a manufacturing-level
+  UART/SecondStage authentication (if any) or an upstream, off-device
+  check would provide that.
+
+Not pursued further here: this project replaces Xiaomi's firmware outright,
+so anything built from it stops speaking the Xiaomi/Vela protocol this
+whole `docs/PROTOCOL.md` and `ios/Manumit` are built around. Relevant as
+hardware/background reference only, not as a path this project is taking.
+
 ## 1a. Discovery (Windows, WinRT — not from Gadgetbridge source)
 
 **[from WinRT platform knowledge, untested]** Android's Bluetooth classic
@@ -661,3 +791,8 @@ is the first thing to question — report back exactly what `scan` prints
   Gadgetbridge's supported device set — this app is a factory default,
   which some vendors block from deletion despite the generic command
   existing).
+- `vela_ota.bin`'s flash-acceptance path is now confirmed CRC/MD5-only by
+  disassembly (§8.2) — remaining gap is `vela_ap.bin` itself: same
+  base-recovery + literal-pool technique hasn't been applied there to rule
+  out an OTA-specific check independent of the QuickApp `app_verify.c`
+  path already found.
