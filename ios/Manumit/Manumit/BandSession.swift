@@ -228,6 +228,13 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
     // Real Gadgetbridge BLE-V2 first message (docs/PROTOCOL.md §0a): opcode
     // START_SESSION_REQUEST=1, TLVs VERSION/MAX_PACKET_SIZE/TX_WIN/SEND_TIMEOUT.
+    // Sequence is hardcoded 0, NOT drawn from `sendSeq` (XiaomiBleProtocolV2.
+    // java:90 vs :344 -- SessionConfig always uses literal 0; the Data-packet
+    // counter is separate and only starts incrementing from the first real
+    // Data send). Sharing one counter across both made our first Data packet
+    // (PhoneNonce) go out as sequence 1 instead of 0 -- the watch silently
+    // dropped it as out-of-order: no ACK, no WatchNonce, no error, forever
+    // stuck on "Waiting for watch nonce" (docs/PROTOCOL.md §3).
     private func startSppV2Session() {
         state = .startingSession
         var payload = Data([0x01])
@@ -235,7 +242,7 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         payload.append(contentsOf: [0x02, 0x02, 0x00, 0x00, 0xFC])       // MAX_PACKET_SIZE
         payload.append(contentsOf: [0x03, 0x02, 0x00, 0x20, 0x00])       // TX_WIN
         payload.append(contentsOf: [0x04, 0x02, 0x00, 0x10, 0x27])       // SEND_TIMEOUT
-        sendPacket(type: SppV2Codec.packetTypeSessionConfig, sequence: nextSeq(), payload: payload)
+        sendPacket(type: SppV2Codec.packetTypeSessionConfig, sequence: 0, payload: payload)
     }
 
     private func drainBuffer() {

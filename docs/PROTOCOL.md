@@ -56,14 +56,13 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
   quirk observed on the Windows classic-BT side, §1a). Practical consequence:
   a passive scan often sees nothing; triggering a sync from the Xiaomi
   Wear/Mi Fitness app while scanning is what surfaces it.
-- **[verified, `ios/Manumit`]** The Band appears to hold only one active BLE
-  central connection at a time. Connecting from `ios/Manumit` mid-handshake
-  and then opening Mi Fitness (which reconnects and syncs) tears down
-  Manumit's session -- observed as the notify characteristic going silent
-  (no further `005E` frames in the auto-logged fixture after our last `tx`)
-  rather than a clean `didDisconnectPeripheral`. Don't run a Manumit
-  handshake and Mi Fitness at the same time; trigger the sync first (previous
-  bullet), then close Mi Fitness before connecting from Manumit.
+- **Retracted:** an earlier note here claimed the Band only holds one active
+  BLE central connection at a time, based on `ios/Manumit`'s notify channel
+  going silent right after our own `tx` in
+  `fixtures/session-20260802-114424.jsonl`. Reproduced again with Mi Fitness
+  fully force-quit (not just backgrounded) and still silent, which rules that
+  theory out -- see the sequence-numbering bug below instead, which is the
+  real explanation for that fixture.
 - Once connected, GATT table observed:
   - **`FE95`** — SIG-registered to Xiaomi Inc. (MiBeacon; verified against
     the official Bluetooth SIG assigned-numbers registry, not from memory).
@@ -301,6 +300,18 @@ vs SPP-V2 framing — only how the bytes get chunked onto the wire differs.
    login — see `docs/TOKEN.md`, M2), generate a random 16-byte `phoneNonce`.
    Send `Command{type=1, subtype=26}` → `Auth.PhoneNonce{nonce=phoneNonce}`
    (`XiaomiAuthService.java:88-95, 244-256`).
+   **[verified, `ios/Manumit`, 2026-08-02, `fixtures/session-20260802-114424.jsonl`]**
+   SPP-V2 packet sequence numbers for the Data channel and for SessionConfig
+   are **separate counters**, not one shared one
+   (`XiaomiBleProtocolV2.java:90` hardcodes `SessionConfigPacket` sequence to
+   literal `0`; the `Data`-packet counter (`:46,344`) is distinct and only
+   increments on `encodePacket()`, i.e. per Data send) — so the first Data
+   packet (this PhoneNonce) must go out with sequence `0`, not whatever
+   comes after the SessionConfig request's own sequence. Getting this wrong
+   (sharing one counter, sending PhoneNonce as sequence `1`) produced a
+   silent failure on real hardware: no ACK, no WatchNonce, no error, stuck
+   forever on "waiting for watch nonce" — the watch just drops an
+   out-of-order Data packet rather than rejecting it.
 2. **Watch → Phone:** `Command{type=1, subtype=26}` →
    `Auth.WatchNonce{nonce=watchNonce, hmac}` (`XiaomiAuthService.java:124-144`).
    **[verified, offline decode of `fixtures/session-20260801-fe95-ble-v2.jsonl`
