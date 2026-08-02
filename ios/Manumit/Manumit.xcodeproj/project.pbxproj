@@ -24,6 +24,7 @@
 		BB0000000000000000000204 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000104 /* OnboardingView.swift */; };
 		BB0000000000000000000205 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000105 /* MainTabView.swift */; };
 		BB0000000000000000000206 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000106 /* DashboardView.swift */; };
+		BB0000000000000000000207 /* SystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000107 /* SystemView.swift */; };
 		CC0000000000000000000012 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000011 /* XCTest.framework */; };
 		CC0000000000000000000199 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000099 /* SmokeTests.swift */; };
 		CC0000000000000000000200 /* ActivityFileIdEncodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */; };
@@ -62,6 +63,7 @@
 		BB0000000000000000000104 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000105 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000106 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000107 /* SystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000109 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		BB0000000000000000000110 /* Manumit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Manumit.entitlements; sourceTree = "<group>"; };
 		CC0000000000000000000010 /* ManumitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ManumitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -133,6 +135,7 @@
 				BB0000000000000000000103 /* SystemCommandService.swift */,
 				BB0000000000000000000105 /* MainTabView.swift */,
 				BB0000000000000000000106 /* DashboardView.swift */,
+				BB0000000000000000000107 /* SystemView.swift */,
 				BB0000000000000000000110 /* Manumit.entitlements */,
 			);
 			path = Manumit;
@@ -274,6 +277,7 @@
 				BB0000000000000000000203 /* SystemCommandService.swift in Sources */,
 				BB0000000000000000000205 /* MainTabView.swift in Sources */,
 				BB0000000000000000000206 /* DashboardView.swift in Sources */,
+				BB0000000000000000000207 /* SystemView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

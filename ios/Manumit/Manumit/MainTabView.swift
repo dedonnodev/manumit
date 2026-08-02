@@ -34,7 +34,11 @@ struct MainTabView: View {
             DashboardView(healthStore: healthStore)
                 .environmentObject(session)
                 .tabItem { Label("Dashboard", systemImage: "gauge") }
-            // Task 10 adds a System tab here; Task 11 adds a Settings tab.
+            SystemView()
+                .environmentObject(systemCommands)
+                .environmentObject(session)
+                .tabItem { Label("System", systemImage: "app.badge") }
+            // Task 11 adds a Settings tab here.
         }
     }
 }
