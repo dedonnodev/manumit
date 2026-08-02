@@ -483,14 +483,26 @@ Command type `8`, subtypes `CMD_ACTIVITY_FETCH_TODAY=1`,
    `Health.activitySyncRequestToday`=field 5,
    `ActivitySyncRequestToday.unknown1`=field 1, `fetchRecordedDataToday`,
    `XiaomiHealthService.java:802-814`). Implemented in `ios/Manumit` (M5),
-   sent right after the M4 battery round-trip completes; not yet confirmed
-   against real hardware.
+   sent right after the M4 battery round-trip completes.
+   **[verified, `ios/Manumit`, 2026-08-02, `fixtures/session-20260802-134920.jsonl`]**
+   Sent as 10-byte plaintext `08 08 10 01 52 04 2A 02 08 00` (matching the
+   field layout above byte-for-byte), encrypted to `69 59 D2 29 DF 64 0B FA
+   FC 7C`.
 2. Watch replies with back-to-back 7-byte file IDs, in
    `Health.activityRequestFileIds` (field 2 -- same field the per-file
    request in step 3 reuses, `XiaomiHealthService.java:135-136`). Response
    length not a multiple of 7 is treated as unparseable and logged, not
    guessed at (`handleActivityFetchResponse`,
    `XiaomiHealthService.java:852-871`); `ios/Manumit` does the same.
+   Confirmed on hardware: response decrypts to `08 08 10 01 52 10 12 0E 6C
+   14 6F 6A 08 04 00 60 6C 6E 6A 08 05 01`, two file IDs -- `{timestamp=
+   2026-08-02T09:57:00Z, timezone_blocks=8, version=4, flags=0x00}` (today,
+   still-open daily file) and `{timestamp=2026-08-01T22:00:00Z,
+   timezone_blocks=8, version=5, flags=0x01}` (yesterday's tail, `flags`
+   LSB set — plausibly the SUMMARY detail-type bit per §6.1's bit layout).
+   `timezone_blocks=8` = UTC+2 (8 × 15min), consistent with the device's
+   locale at capture time. Both decode to plausible recent timestamps, not
+   garbage.
 3. Phone requests each file id in priority order (summaries → details → GPS)
    via `CMD_ACTIVITY_FETCH_REQUEST` (`XiaomiHealthService.java:826-837`).
 4. Watch streams the file over the Activity channel, app-level chunked as
