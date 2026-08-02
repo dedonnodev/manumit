@@ -49,11 +49,15 @@ QuickApps).
     exists), raw session log (moved here from the home screen — CLAUDE.md's
     instrumentation rule keeps fixture logging mandatory, it just isn't the
     primary UI anymore).
-- `LocalStore.swift` (new) — SwiftData. One model, `DailySummaryRecord`
-  (date, steps, calories, restingHR, maxHR, avgHR), upserted by date. This
-  is the "stores data locally" half of the project's stated end goal
-  (CLAUDE.md), and the source HealthKit writes are read from — so re-runs
-  don't double-write.
+- `LocalStore.swift` (new) — `Codable` struct `DailySummaryRecord` (date,
+  steps, calories, restingHR, maxHR, avgHR) persisted as a single JSON
+  dictionary file (keyed by date string) under the app's Application
+  Support directory, upserted by date. Not SwiftData: the project's
+  deployment target is iOS 16 (`IPHONEOS_DEPLOYMENT_TARGET = 16.0` in
+  `project.pbxproj`), SwiftData needs iOS 17+. A plain Codable file needs
+  no deployment-target bump and no new framework — this is the "stores
+  data locally" half of the project's stated end goal (CLAUDE.md), and the
+  source HealthKit writes are read from, so re-runs don't double-write.
 - `HealthKitStore.swift` (new) — thin wrapper: `requestAuthorization()`,
   `write(_ record: DailySummaryRecord)`. No read-back from HealthKit; this
   app is a one-way writer.
