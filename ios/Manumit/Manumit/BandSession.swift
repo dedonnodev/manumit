@@ -61,10 +61,15 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
     private static let serviceUUID = CBUUID(string: "FE95")
     private static let notifyCharUUID = CBUUID(string: "005E") // watch -> phone
     private static let writeCharUUID = CBUUID(string: "005F")  // phone -> watch
+    // CLAUDE.md: peripheral identifier is a secret (like a MAC) -- Keychain,
+    // not UserDefaults. Lets reconnect skip scanning (docs/PROTOCOL.md §0a:
+    // the Band's BLE advertising window is narrow and easy to miss).
+    private static let savedPeripheralAccount = "peripheral-uuid"
 
     private var manager: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var writeChar: CBCharacteristic?
+    private var usingSavedPeripheral = false
 
     private var secretKey = Data()
     private var phoneNonce = Data()
@@ -85,6 +90,7 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         rxBuffer = Data()
         sendSeq = 0
         derivedKeys = nil
+        usingSavedPeripheral = false
         log = []
         state = .scanning
         appendLog("scanning for Band 10...")
@@ -98,6 +104,14 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
             state = .failed("Bluetooth not ready (state=\(central.state.rawValue))")
             return
         }
+        if let saved = KeychainStore.load(account: Self.savedPeripheralAccount),
+           let uuid = UUID(uuidString: saved),
+           let known = central.retrievePeripherals(withIdentifiers: [uuid]).first {
+            usingSavedPeripheral = true
+            appendLog("reconnecting to saved band \(uuid.uuidString)...")
+            connect(to: known, via: central)
+            return
+        }
         central.scanForPeripherals(withServices: nil, options: nil)
     }
 
@@ -106,15 +120,29 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         let range = NSRange(name.startIndex..., in: name)
         guard Self.deviceNameRegex.firstMatch(in: name, range: range) != nil else { return }
 
+        appendLog("found \(name), connecting...")
+        connect(to: peripheral, via: central)
+    }
+
+    private func connect(to peripheral: CBPeripheral, via central: CBCentralManager) {
         central.stopScan()
         self.peripheral = peripheral
         peripheral.delegate = self
         state = .connecting
-        appendLog("found \(name), connecting...")
         central.connect(peripheral, options: nil)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        if usingSavedPeripheral {
+            // Saved band unreachable via direct retrieve (out of range, or it
+            // stopped honoring the old connection) -- fall back to a fresh
+            // name-filtered scan instead of just failing outright.
+            usingSavedPeripheral = false
+            appendLog("saved band unreachable (\(error?.localizedDescription ?? "unknown")), scanning...")
+            state = .scanning
+            central.scanForPeripherals(withServices: nil, options: nil)
+            return
+        }
         state = .failed("connect failed: \(error?.localizedDescription ?? "unknown")")
     }
 
@@ -125,6 +153,8 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         state = .discoveringServices
+        KeychainStore.save(peripheral.identifier.uuidString, account: Self.savedPeripheralAccount)
+        appendLog("connected, saved band for faster reconnect next time")
         startFixtureSession(deviceName: peripheral.name ?? "?")
         peripheral.discoverServices([Self.serviceUUID])
     }

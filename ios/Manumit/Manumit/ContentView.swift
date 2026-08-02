@@ -22,6 +22,7 @@ private let keychainAccount = "auth-key"
 struct ContentView: View {
     @StateObject private var session = BandSession()
     @State private var authKeyHex: String = KeychainStore.load(account: keychainAccount) ?? ""
+    @State private var keychainSaveConfirmedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -38,9 +39,23 @@ struct ContentView: View {
                 .font(.system(.body, design: .monospaced))
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-            Button("Save to Keychain") {
-                KeychainStore.save(authKeyHex, account: keychainAccount)
+            HStack {
+                Button("Save to Keychain") {
+                    KeychainStore.save(authKeyHex, account: keychainAccount)
+                    keychainSaveConfirmedAt = Date()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        keychainSaveConfirmedAt = nil
+                    }
+                }
+                .disabled(authKeyHex.count != 32)
+                if keychainSaveConfirmedAt != nil {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
+                }
             }
+            .animation(.default, value: keychainSaveConfirmedAt)
 
             Divider()
 
@@ -49,6 +64,11 @@ struct ContentView: View {
                 session.start(secretKeyHex: authKeyHex)
             }
             .disabled(authKeyHex.count != 32)
+            if session.state == .scanning {
+                Text("Stuck scanning? Open Mi Fitness and let it sync -- the Band's BLE advertising window is narrow and tied to that (docs/PROTOCOL.md §0a).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Divider()
 
