@@ -16,10 +16,12 @@
 		BB0000000000000000000028 /* AuthCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000018 /* AuthCrypto.swift */; };
 		BB0000000000000000000029 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000019 /* KeychainStore.swift */; };
 		BB0000000000000000000024 /* CRC32.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000020 /* CRC32.swift */; };
+		BB0000000000000000000200 /* DailySummaryParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000100 /* DailySummaryParser.swift */; };
 		CC0000000000000000000012 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000011 /* XCTest.framework */; };
 		CC0000000000000000000199 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000099 /* SmokeTests.swift */; };
 		CC0000000000000000000200 /* ActivityFileIdEncodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */; };
 		CC0000000000000000000201 /* ActivityFileFetchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000101 /* ActivityFileFetchTests.swift */; };
+		CC0000000000000000000202 /* DailySummaryParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000102 /* DailySummaryParserTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,11 +45,13 @@
 		BB0000000000000000000018 /* AuthCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthCrypto.swift; sourceTree = "<group>"; };
 		BB0000000000000000000019 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		BB0000000000000000000020 /* CRC32.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CRC32.swift; sourceTree = "<group>"; };
+		BB0000000000000000000100 /* DailySummaryParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailySummaryParser.swift; sourceTree = "<group>"; };
 		CC0000000000000000000010 /* ManumitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ManumitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC0000000000000000000011 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/iPhoneOS.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
 		CC0000000000000000000099 /* SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
 		CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFileIdEncodeTests.swift; sourceTree = "<group>"; };
 		CC0000000000000000000101 /* ActivityFileFetchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFileFetchTests.swift; sourceTree = "<group>"; };
+		CC0000000000000000000102 /* DailySummaryParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailySummaryParserTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +104,7 @@
 				BB0000000000000000000018 /* AuthCrypto.swift */,
 				BB0000000000000000000019 /* KeychainStore.swift */,
 				BB0000000000000000000020 /* CRC32.swift */,
+				BB0000000000000000000100 /* DailySummaryParser.swift */,
 			);
 			path = Manumit;
 			sourceTree = "<group>";
@@ -119,6 +124,7 @@
 				CC0000000000000000000099 /* SmokeTests.swift */,
 				CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */,
 				CC0000000000000000000101 /* ActivityFileFetchTests.swift */,
+				CC0000000000000000000102 /* DailySummaryParserTests.swift */,
 			);
 			path = ManumitTests;
 			sourceTree = "<group>";
@@ -228,6 +234,7 @@
 				BB0000000000000000000028 /* AuthCrypto.swift in Sources */,
 				BB0000000000000000000029 /* KeychainStore.swift in Sources */,
 				BB0000000000000000000024 /* CRC32.swift in Sources */,
+				BB0000000000000000000200 /* DailySummaryParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,6 +245,7 @@
 				CC0000000000000000000199 /* SmokeTests.swift in Sources */,
 				CC0000000000000000000200 /* ActivityFileIdEncodeTests.swift in Sources */,
 				CC0000000000000000000201 /* ActivityFileFetchTests.swift in Sources */,
+				CC0000000000000000000202 /* DailySummaryParserTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

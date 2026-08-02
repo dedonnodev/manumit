@@ -489,7 +489,12 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         }
         let fileId = pendingActivityFileIds.removeFirst()
         appendLog("got file body (\(data.count) bytes) for \(Self.activityFileIdFormatter.string(from: fileId.timestamp))")
-        // Task 4 plugs in: DailySummaryParser.parse(fileId:, bytes: data) -> LocalStore/HealthKit
+        if let record = DailySummaryParser.parse(fileId: fileId, bytes: data) {
+            appendLog("parsed daily summary: steps=\(record.steps) calories=\(record.totalCalories)")
+            // Task 5/6 plug in here: LocalStore.upsert(record) -> HealthKitStore.save
+        } else {
+            appendLog("unsupported or unparseable activity file (version=\(fileId.version)), skipping")
+        }
         ackActivityFile(fileId)
         requestNextActivityFile()
     }
