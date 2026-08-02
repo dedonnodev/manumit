@@ -94,6 +94,15 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
     @Published private(set) var log: [String] = []
     @Published private(set) var fixtureURL: URL?
 
+    // Generic hook for services built on top of the encrypted channel
+    // (SystemCommandService) -- separate from the M4/M5/M6 flow above,
+    // which only cares about its own (type, subtype) pairs.
+    var onEncryptedCommand: ((XiaomiProto.DecodedCommand) -> Void)?
+
+    func sendEncryptedCommand(_ body: Data) {
+        sendEncryptedData(rawChannel: 1, body: body)
+    }
+
     private static let deviceNameRegex = try! NSRegularExpression(pattern: "^Xiaomi Smart Band 10 [0-9A-F]{4}$")
     private static let serviceUUID = CBUUID(string: "FE95")
     private static let notifyCharUUID = CBUUID(string: "005E") // watch -> phone
@@ -389,6 +398,7 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
     private func handleEncryptedCommand(body: Data) {
         let command = XiaomiProto.decodeCommand(body)
+        onEncryptedCommand?(command)
         switch (command.type, command.subtype) {
         case (2, 1):
             guard let systemBytes = command.systemBytes,

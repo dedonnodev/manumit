@@ -133,6 +133,7 @@ enum XiaomiProto {
         var authBytes: Data?
         var systemBytes: Data?
         var healthBytes: Data?
+        var rpkBytes: Data?
         var status: UInt64?
     }
 
@@ -245,6 +246,7 @@ enum XiaomiProto {
         var authBytes: Data?
         var systemBytes: Data?
         var healthBytes: Data?
+        var rpkBytes: Data?
         var status: UInt64?
         while r.hasMore {
             let (field, wireType) = r.readTag()
@@ -254,11 +256,12 @@ enum XiaomiProto {
             case (3, 2): authBytes = r.readBytes()
             case (4, 2): systemBytes = r.readBytes()
             case (10, 2): healthBytes = r.readBytes()
+            case (22, 2): rpkBytes = r.readBytes()
             case (100, 0): status = r.readVarint()
             default: r.skip(wireType: wireType)
             }
         }
-        return DecodedCommand(type: type, subtype: subtype, authBytes: authBytes, systemBytes: systemBytes, healthBytes: healthBytes, status: status)
+        return DecodedCommand(type: type, subtype: subtype, authBytes: authBytes, systemBytes: systemBytes, healthBytes: healthBytes, rpkBytes: rpkBytes, status: status)
     }
 
     /// `System.power.battery` (fields 2, 1 respectively) -- the only System
@@ -364,6 +367,126 @@ enum XiaomiProto {
         }
         guard let n = nonce, let h = hmac else { return nil }
         return DecodedWatchNonce(nonce: n, hmac: h)
+    }
+
+    // -- §8 System.displayItems (type=2, field 10) --
+
+    struct DecodedDisplayItem {
+        var code: String
+        var name: String
+        var disabled: Bool
+        var isSettings: UInt64
+        var inMoreSection: Bool
+    }
+
+    /// GET is bare type/subtype (use `commandTypeSubtypeOnly(type: 2, subtype: 29)`).
+    /// SET always re-sends the *full* item list with `disabled` toggled --
+    /// never a partial diff (`XiaomiSystemService.java:601-622`).
+    static func commandSetDisplayItems(_ items: [DecodedDisplayItem]) -> Data {
+        var itemsWriter = ProtoWriter()
+        for item in items {
+            var iw = ProtoWriter()
+            iw.putString(1, item.code)
+            iw.putString(2, item.name)
+            iw.putVarint(3, item.disabled ? 1 : 0)
+            if item.isSettings != 0 { iw.putVarint(4, item.isSettings) }
+            if item.inMoreSection { iw.putVarint(6, 1) }
+            itemsWriter.putMessage(1, iw.data)
+        }
+        var systemWriter = ProtoWriter()
+        systemWriter.putMessage(10, itemsWriter.data) // System.displayItems, field 10
+        var w = ProtoWriter()
+        w.putVarint(1, 2)
+        w.putVarint(2, 30) // CMD_DISPLAY_ITEMS_SET (XiaomiSystemService.java:91)
+        w.putMessage(4, systemWriter.data) // Command.system, field 4
+        return w.data
+    }
+
+    static func decodeDisplayItems(fromSystem systemBytes: Data) -> [DecodedDisplayItem]? {
+        var sr = ProtoReader(systemBytes)
+        var itemsBytes: Data?
+        while sr.hasMore {
+            let (field, wireType) = sr.readTag()
+            if field == 10, wireType == 2 { itemsBytes = sr.readBytes() } else { sr.skip(wireType: wireType) }
+        }
+        guard let itemsBytes = itemsBytes else { return nil }
+        var ir = ProtoReader(itemsBytes)
+        var result: [DecodedDisplayItem] = []
+        while ir.hasMore {
+            let (field, wireType) = ir.readTag()
+            guard field == 1, wireType == 2 else { ir.skip(wireType: wireType); continue }
+            var pr = ProtoReader(ir.readBytes())
+            var code = "", name = "", disabled = false, isSettings: UInt64 = 0, inMore = false
+            while pr.hasMore {
+                let (f, wt) = pr.readTag()
+                switch (f, wt) {
+                case (1, 2): code = String(data: pr.readBytes(), encoding: .utf8) ?? ""
+                case (2, 2): name = String(data: pr.readBytes(), encoding: .utf8) ?? ""
+                case (3, 0): disabled = pr.readVarint() != 0
+                case (4, 0): isSettings = pr.readVarint()
+                case (6, 0): inMore = pr.readVarint() != 0
+                default: pr.skip(wireType: wt)
+                }
+            }
+            result.append(DecodedDisplayItem(code: code, name: name, disabled: disabled, isSettings: isSettings, inMoreSection: inMore))
+        }
+        return result
+    }
+
+    // -- §8 Rpk / QuickApps (type=20, Command.rpk = field 22) --
+
+    struct DecodedRpkInfo {
+        var id: String
+        var name: String
+        var sha: Data
+    }
+
+    static func commandRpkList() -> Data {
+        commandTypeSubtypeOnly(type: 20, subtype: 0) // CMD_RPK_LIST (XiaomiRpkService.java:41)
+    }
+
+    /// No response expected -- the band just gets deleted; the phone
+    /// re-requests the list immediately after (`XiaomiRpkService.java:104-124`).
+    static func commandDeleteRpk(id: String, sha: Data) -> Data {
+        var delWriter = ProtoWriter()
+        delWriter.putString(1, id)
+        delWriter.putBytes(2, sha)
+        var rpkWriter = ProtoWriter()
+        rpkWriter.putMessage(5, delWriter.data) // Rpk.rpkDel, field 5
+        var w = ProtoWriter()
+        w.putVarint(1, 20)
+        w.putVarint(2, 3) // CMD_RPK_DELETE (XiaomiRpkService.java:42)
+        w.putMessage(22, rpkWriter.data) // Command.rpk, field 22
+        return w.data
+    }
+
+    static func decodeRpkList(fromRpk rpkBytes: Data) -> [DecodedRpkInfo]? {
+        var rr = ProtoReader(rpkBytes)
+        var listBytes: Data?
+        while rr.hasMore {
+            let (field, wireType) = rr.readTag()
+            if field == 1, wireType == 2 { listBytes = rr.readBytes() } else { rr.skip(wireType: wireType) }
+        }
+        guard let listBytes = listBytes else { return nil }
+        var lr = ProtoReader(listBytes)
+        var result: [DecodedRpkInfo] = []
+        while lr.hasMore {
+            let (field, wireType) = lr.readTag()
+            guard field == 1, wireType == 2 else { lr.skip(wireType: wireType); continue }
+            var pr = ProtoReader(lr.readBytes())
+            var id = "", name = "", sha = Data()
+            while pr.hasMore {
+                let (f, wt) = pr.readTag()
+                switch (f, wt) {
+                case (1, 2): id = String(data: pr.readBytes(), encoding: .utf8) ?? ""
+                case (5, 2): name = String(data: pr.readBytes(), encoding: .utf8) ?? ""
+                case (2, 2): sha = pr.readBytes()
+                default: pr.skip(wireType: wt)
+                }
+            }
+            result.append(DecodedRpkInfo(id: id, name: name, sha: sha))
+        }
+        return result
     }
 
     // No Swift toolchain available in the environment these changes were
