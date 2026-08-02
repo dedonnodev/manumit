@@ -477,8 +477,20 @@ Command type `8`, subtypes `CMD_ACTIVITY_FETCH_TODAY=1`,
 `CMD_ACTIVITY_FETCH_ACK=5` (`services/XiaomiHealthService.java:72-75`).
 
 1. Phone requests today's, then past, file-id lists
-   (`XiaomiHealthService.java:802-881`).
-2. Watch replies with back-to-back 7-byte file IDs.
+   (`XiaomiHealthService.java:802-881`). TODAY request is `Command{type=8,
+   subtype=1, health=Health{activitySyncRequestToday=
+   ActivitySyncRequestToday{unknown1=0}}}` (`Command.health`=field 10,
+   `Health.activitySyncRequestToday`=field 5,
+   `ActivitySyncRequestToday.unknown1`=field 1, `fetchRecordedDataToday`,
+   `XiaomiHealthService.java:802-814`). Implemented in `ios/Manumit` (M5),
+   sent right after the M4 battery round-trip completes; not yet confirmed
+   against real hardware.
+2. Watch replies with back-to-back 7-byte file IDs, in
+   `Health.activityRequestFileIds` (field 2 -- same field the per-file
+   request in step 3 reuses, `XiaomiHealthService.java:135-136`). Response
+   length not a multiple of 7 is treated as unparseable and logged, not
+   guessed at (`handleActivityFetchResponse`,
+   `XiaomiHealthService.java:852-871`); `ios/Manumit` does the same.
 3. Phone requests each file id in priority order (summaries → details → GPS)
    via `CMD_ACTIVITY_FETCH_REQUEST` (`XiaomiHealthService.java:826-837`).
 4. Watch streams the file over the Activity channel, app-level chunked as

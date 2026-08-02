@@ -22,6 +22,7 @@ struct ManumitApp: App {
     init() {
         #if DEBUG
         SppV2Codec.selfTest()
+        XiaomiProto.selfTest()
         #endif
     }
 

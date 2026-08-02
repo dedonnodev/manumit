@@ -20,7 +20,9 @@
 // connect -> StartSessionRequest -> PhoneNonce -> verify WatchNonce ->
 // AuthStep3 -> authenticated. M4: first encrypted round-trip -- once
 // authenticated, request System/Battery (§4.2 AES-CTR) to prove
-// derivedKeys.encryptionKey/decryptionKey actually work both ways.
+// derivedKeys.encryptionKey/decryptionKey actually work both ways. M5:
+// after the battery round-trip, request today's activity file-id list
+// (§6.2 CMD_ACTIVITY_FETCH_TODAY) -- file-id list only, not file content.
 
 import CoreBluetooth
 import Foundation
@@ -344,13 +346,57 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
     private func handleEncryptedCommand(body: Data) {
         let command = XiaomiProto.decodeCommand(body)
-        guard command.type == 2, command.subtype == 1,
-              let systemBytes = command.systemBytes,
-              let battery = XiaomiProto.decodeBattery(fromSystem: systemBytes) else {
+        switch (command.type, command.subtype) {
+        case (2, 1):
+            guard let systemBytes = command.systemBytes,
+                  let battery = XiaomiProto.decodeBattery(fromSystem: systemBytes) else {
+                appendLog("could not parse battery response")
+                return
+            }
+            appendLog("battery: level=\(battery.level.map { "\($0)" } ?? "?") state=\(battery.state.map { "\($0)" } ?? "?")")
+            sendActivityFetchTodayRequest()
+        case (8, 1):
+            guard let healthBytes = command.healthBytes,
+                  let fileIds = XiaomiProto.decodeActivityFileIds(fromHealth: healthBytes) else {
+                appendLog("could not parse activity file id response (health bytes=\(command.healthBytes?.count ?? 0))")
+                return
+            }
+            logActivityFileIds(fileIds)
+        default:
             appendLog("unhandled encrypted command type=\(command.type) subtype=\(command.subtype)")
-            return
         }
-        appendLog("battery: level=\(battery.level.map { "\($0)" } ?? "?") state=\(battery.state.map { "\($0)" } ?? "?")")
+    }
+
+    // MARK: - §6.2 activity file-id fetch (M5, TODAY only)
+
+    // Health{activitySyncRequestToday=ActivitySyncRequestToday{unknown1=0}}
+    // (XiaomiHealthService.java:802-814, fetchRecordedDataToday).
+    private func sendActivityFetchTodayRequest() {
+        appendLog("requesting today's activity file ids")
+        sendEncryptedData(rawChannel: 1, body: XiaomiProto.commandWithHealth(type: 8, subtype: 1, healthField: XiaomiProto.healthActivitySyncRequestToday()))
+    }
+
+    private static let activityFileIdFormatter = ISO8601DateFormatter()
+
+    private func logActivityFileIds(_ fileIds: [XiaomiProto.DecodedActivityFileId]) {
+        appendLog("got \(fileIds.count) activity file id(s)")
+        for f in fileIds {
+            appendLog("  file: \(Self.activityFileIdFormatter.string(from: f.timestamp)) tz=\(f.timezoneBlocks) version=\(f.version) flags=0x\(String(format: "%02X", f.flags))")
+        }
+        guard let start = fixtureStart else { return }
+        let entries: [[String: Any]] = fileIds.map {
+            [
+                "timestamp": Self.activityFileIdFormatter.string(from: $0.timestamp),
+                "timezone_blocks": Int($0.timezoneBlocks),
+                "version": Int($0.version),
+                "flags": Int($0.flags),
+            ]
+        }
+        writeFixtureLine([
+            "t": ProcessInfo.processInfo.systemUptime - start,
+            "direction": "rx",
+            "activity_file_ids": entries,
+        ])
     }
 
     // MARK: - §3 handshake

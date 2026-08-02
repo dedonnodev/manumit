@@ -132,6 +132,7 @@ enum XiaomiProto {
         var subtype: UInt64
         var authBytes: Data?
         var systemBytes: Data?
+        var healthBytes: Data?
         var status: UInt64?
     }
 
@@ -143,6 +144,14 @@ enum XiaomiProto {
     struct DecodedBattery {
         var level: UInt64?
         var state: UInt64?
+    }
+
+    /// One `XiaomiActivityFileId` (§6.1): 7 bytes, little-endian.
+    struct DecodedActivityFileId {
+        var timestamp: Date
+        var timezoneBlocks: Int8 // 15-min blocks, signed (west of UTC is negative)
+        var version: UInt8
+        var flags: UInt8 // bit7=type bits1-6=subtype bits0-1=detailType -- raw, not decomposed (M6+)
     }
 
     // -- build (phone -> watch) --
@@ -164,6 +173,28 @@ enum XiaomiProto {
         w.putVarint(1, type)
         w.putVarint(2, subtype)
         return w.data
+    }
+
+    /// `Command.health` is field 10 -- carries the `Health` submessage for
+    /// every type=8 request/response (§6.2).
+    static func commandWithHealth(type: UInt64, subtype: UInt64, healthField: Data) -> Data {
+        var w = ProtoWriter()
+        w.putVarint(1, type)
+        w.putVarint(2, subtype)
+        w.putBytes(10, healthField)
+        return w.data
+    }
+
+    /// `Health{activitySyncRequestToday=ActivitySyncRequestToday{unknown1=0}}`
+    /// -- the M5 TODAY file-id request (`XiaomiHealthService.java:802-814`,
+    /// `Health.activitySyncRequestToday`=field 5,
+    /// `ActivitySyncRequestToday.unknown1`=field 1).
+    static func healthActivitySyncRequestToday() -> Data {
+        var req = ProtoWriter()
+        req.putVarint(1, 0) // unknown1, must be serialized explicitly as 0
+        var health = ProtoWriter()
+        health.putBytes(5, req.data)
+        return health.data
     }
 
     static func authWithPhoneNonce(_ nonce: Data) -> Data {
@@ -197,6 +228,7 @@ enum XiaomiProto {
         var type: UInt64 = 0, subtype: UInt64 = 0
         var authBytes: Data?
         var systemBytes: Data?
+        var healthBytes: Data?
         var status: UInt64?
         while r.hasMore {
             let (field, wireType) = r.readTag()
@@ -205,11 +237,12 @@ enum XiaomiProto {
             case (2, 0): subtype = r.readVarint()
             case (3, 2): authBytes = r.readBytes()
             case (4, 2): systemBytes = r.readBytes()
+            case (10, 2): healthBytes = r.readBytes()
             case (100, 0): status = r.readVarint()
             default: r.skip(wireType: wireType)
             }
         }
-        return DecodedCommand(type: type, subtype: subtype, authBytes: authBytes, systemBytes: systemBytes, status: status)
+        return DecodedCommand(type: type, subtype: subtype, authBytes: authBytes, systemBytes: systemBytes, healthBytes: healthBytes, status: status)
     }
 
     /// `System.power.battery` (fields 2, 1 respectively) -- the only System
@@ -252,6 +285,45 @@ enum XiaomiProto {
         return DecodedBattery(level: level, state: state)
     }
 
+    /// `Health.activityRequestFileIds` (field 2) -- same field Gadgetbridge
+    /// reuses for both the TODAY/PAST response and the per-file request
+    /// (`XiaomiHealthService.java:135-136`). Response bytes are back-to-back
+    /// 7-byte `XiaomiActivityFileId` entries (§6.1); `nil` if the field is
+    /// missing or its length isn't a multiple of 7 -- don't guess at framing.
+    static func decodeActivityFileIds(fromHealth healthBytes: Data) -> [DecodedActivityFileId]? {
+        var hr = ProtoReader(healthBytes)
+        var idBytes: Data?
+        while hr.hasMore {
+            let (field, wireType) = hr.readTag()
+            if field == 2, wireType == 2 {
+                idBytes = hr.readBytes()
+            } else {
+                hr.skip(wireType: wireType)
+            }
+        }
+        guard let idBytes = idBytes, idBytes.count % 7 == 0 else { return nil }
+
+        var result: [DecodedActivityFileId] = []
+        var offset = idBytes.startIndex
+        while offset < idBytes.endIndex {
+            let ts = UInt32(idBytes[offset])
+                | UInt32(idBytes[offset + 1]) << 8
+                | UInt32(idBytes[offset + 2]) << 16
+                | UInt32(idBytes[offset + 3]) << 24
+            let tz = Int8(bitPattern: idBytes[offset + 4])
+            let version = idBytes[offset + 5]
+            let flags = idBytes[offset + 6]
+            result.append(DecodedActivityFileId(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(ts)),
+                timezoneBlocks: tz,
+                version: version,
+                flags: flags
+            ))
+            offset += 7
+        }
+        return result
+    }
+
     static func decodeWatchNonce(fromAuth authBytes: Data) -> DecodedWatchNonce? {
         var r = ProtoReader(authBytes)
         var watchNonceBytes: Data?
@@ -276,5 +348,55 @@ enum XiaomiProto {
         }
         guard let n = nonce, let h = hmac else { return nil }
         return DecodedWatchNonce(nonce: n, hmac: h)
+    }
+
+    // No Swift toolchain available in the environment these changes were
+    // authored in (no XCTest run possible outside Xcode) -- same situation
+    // as `SppV2Codec.selfTest()`. Asserts run for real the first time the
+    // app launches in DEBUG.
+    static func selfTest() {
+        // TODAY request: Command{type=8,subtype=1,health=Health{
+        // activitySyncRequestToday=ActivitySyncRequestToday{unknown1=0}}},
+        // hand-verified byte-by-byte against the field numbers above.
+        let built = commandWithHealth(type: 8, subtype: 1, healthField: healthActivitySyncRequestToday())
+        let expected = Data([0x08, 0x08, 0x10, 0x01, 0x52, 0x04, 0x2A, 0x02, 0x08, 0x00])
+        assert(built == expected, "M5 TODAY request encoding changed: \(built as NSData) != \(expected as NSData)")
+
+        // Response round-trip: two synthetic 7-byte file IDs packed into
+        // Health.activityRequestFileIds (field 2), wrapped in a Command like
+        // a real watch reply, decoded back through decodeCommand +
+        // decodeActivityFileIds.
+        let entry1 = Data([0x64, 0x00, 0x00, 0x00, 0x04, 0x06, 0x00]) // ts=100, tz=4, version=6, flags=0x00
+        let entry2 = Data([0x65, 0x00, 0x00, 0x00, 0xEC, 0x07, 0x81]) // ts=101, tz=-20, version=7, flags=0x81
+        var healthWriter = ProtoWriter()
+        healthWriter.putBytes(2, entry1 + entry2)
+        var cmdWriter = ProtoWriter()
+        cmdWriter.putVarint(1, 8)
+        cmdWriter.putVarint(2, 1)
+        cmdWriter.putBytes(10, healthWriter.data)
+
+        let decoded = decodeCommand(cmdWriter.data)
+        assert(decoded.type == 8 && decoded.subtype == 1)
+        guard let healthBytes = decoded.healthBytes,
+              let fileIds = decodeActivityFileIds(fromHealth: healthBytes) else {
+            assertionFailure("M5 response round-trip should decode"); return
+        }
+        assert(fileIds.count == 2)
+        assert(fileIds[0].timestamp.timeIntervalSince1970 == 100)
+        assert(fileIds[0].timezoneBlocks == 4)
+        assert(fileIds[0].version == 6)
+        assert(fileIds[0].flags == 0x00)
+        assert(fileIds[1].timestamp.timeIntervalSince1970 == 101)
+        assert(fileIds[1].timezoneBlocks == -20)
+        assert(fileIds[1].version == 7)
+        assert(fileIds[1].flags == 0x81)
+
+        // Malformed length (not a multiple of 7) must fail loudly, not guess.
+        var badHealthWriter = ProtoWriter()
+        badHealthWriter.putBytes(2, Data([0, 0, 0, 0, 0]))
+        assert(decodeActivityFileIds(fromHealth: badHealthWriter.data) == nil)
+
+        // Missing field entirely.
+        assert(decodeActivityFileIds(fromHealth: Data()) == nil)
     }
 }
