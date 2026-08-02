@@ -81,6 +81,13 @@ enum SppV2Codec {
     /// across two separate notify events).
     static func decode(_ buf: Data) throws -> (SppV2Packet, Int)? {
         guard buf.count >= 8 else { return nil }
+        // `buf` is the caller's rxBuffer after a prior `removeFirst(consumed)`
+        // -- Data doesn't rebase to a 0-based startIndex after that, so every
+        // offset into `buf` (not into the 0-based `bytes` array below) must
+        // be relative to `buf.startIndex`. Got this wrong before: worked for
+        // the first packet ever decoded from a fresh buffer (startIndex == 0
+        // by luck), crashed decoding the second one (out-of-range subdata).
+        let base = buf.startIndex
         let bytes = [UInt8](buf)
         guard bytes[0] == 0xA5, bytes[1] == 0xA5 else {
             throw SppV2Error.badPreamble(bytes[0], bytes[1])
@@ -91,7 +98,7 @@ enum SppV2Codec {
         let declaredChecksum = UInt16(bytes[6]) | (UInt16(bytes[7]) << 8)
         let total = 8 + length
         guard buf.count >= total else { return nil }
-        let payload = buf.subdata(in: 8..<total)
+        let payload = buf.subdata(in: (base + 8)..<(base + total))
         let actual = crc16Arc(payload)
         guard actual == declaredChecksum else {
             throw SppV2Error.badChecksum(expected: declaredChecksum, actual: actual)
@@ -148,6 +155,26 @@ enum SppV2Codec {
 
             let incomplete = try decode(sessionConfigResponse.prefix(10))
             assert(incomplete == nil)
+
+            // Regression: decode a second packet from a buffer whose first
+            // packet was already consumed via `removeFirst`, exactly like
+            // BandSession.drainBuffer does. `subdata(in:)` using absolute
+            // offsets instead of `buf.startIndex`-relative ones only breaks
+            // on this second decode (startIndex != 0 after removeFirst) --
+            // crashed on real hardware on the second real packet, never
+            // caught by decoding fresh 0-based buffers above.
+            var twoPackets = sessionConfigResponse
+            twoPackets.append(ackSeq0)
+            guard let (first, firstConsumed) = try decode(twoPackets) else {
+                assertionFailure("first packet of twoPackets should decode"); return
+            }
+            assert(first.packetType == packetTypeSessionConfig)
+            twoPackets.removeFirst(firstConsumed)
+            guard let (second, secondConsumed) = try decode(twoPackets) else {
+                assertionFailure("second packet of twoPackets should decode after removeFirst"); return
+            }
+            assert(second.packetType == packetTypeAck)
+            assert(secondConsumed == ackSeq0.count)
         } catch {
             assertionFailure("SppV2Codec.selfTest failed: \(error)")
         }
