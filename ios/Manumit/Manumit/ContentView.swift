@@ -86,5 +86,10 @@ struct ContentView: View {
             Spacer()
         }
         .padding()
+        .onAppear {
+            if authKeyHex.count == 32, BandSession.hasSavedPeripheral, session.state == .idle {
+                session.start(secretKeyHex: authKeyHex)
+            }
+        }
     }
 }

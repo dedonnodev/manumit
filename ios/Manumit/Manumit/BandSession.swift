@@ -63,8 +63,13 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
     private static let writeCharUUID = CBUUID(string: "005F")  // phone -> watch
     // CLAUDE.md: peripheral identifier is a secret (like a MAC) -- Keychain,
     // not UserDefaults. Lets reconnect skip scanning (docs/PROTOCOL.md §0a:
-    // the Band's BLE advertising window is narrow and easy to miss).
-    private static let savedPeripheralAccount = "peripheral-uuid"
+    // the Band's BLE advertising window is narrow and easy to miss). Not
+    // `private` -- ContentView checks it to decide whether to auto-connect.
+    static let savedPeripheralAccount = "peripheral-uuid"
+
+    static var hasSavedPeripheral: Bool {
+        KeychainStore.load(account: savedPeripheralAccount) != nil
+    }
 
     private var manager: CBCentralManager?
     private var peripheral: CBPeripheral?
