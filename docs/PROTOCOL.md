@@ -397,23 +397,28 @@ sync with Phase 1 by construction (§ vendoring note in `proto/README.md`).
 
 ### 5.0 Non-auth commands ride the same raw channel as Auth
 
-**[from source, untested]** Once authenticated, System/Health/etc. commands
-are *not* a different `raw channel` from Auth — both are `raw_channel=1`
-(`CHANNEL_PROTOBUF`, `XiaomiSppPacketV2.java:258`); only the opCode differs
-(`1`=plaintext for Auth, `2`=encrypted §4.2 for everything else,
-`getOpCodeForChannel`, `XiaomiSppPacketV2.java:336-348`). `raw_channel=2` is
-`CHANNEL_DATA`, an unrelated always-plaintext channel, not "System".
+**[verified, `ios/Manumit`, 2026-08-02, `fixtures/session-20260802-125630.jsonl`]**
+Once authenticated, System/Health/etc. commands are *not* a different
+`raw channel` from Auth — both are `raw_channel=1` (`CHANNEL_PROTOBUF`,
+`XiaomiSppPacketV2.java:258`); only the opCode differs (`1`=plaintext for
+Auth, `2`=encrypted §4.2 for everything else, `getOpCodeForChannel`,
+`XiaomiSppPacketV2.java:336-348`). `raw_channel=2` is `CHANNEL_DATA`, an
+unrelated always-plaintext channel, not "System".
 
 **System/Battery GET** (type=2, subtype=1): request is a bare
 `Command{type=2, subtype=1}` with no other field set — matches
 `XiaomiSupport.sendCommand(taskName, type, subtype)`
 (`XiaomiSupport.java:423-431`), which every `CMD_*_GET` in
-`XiaomiSystemService.java` (lines 107-141) uses. Response is
-`Command{type=2, subtype=1, system=System{power=Power{battery=Battery{level,
-state, lastCharge}}}}` (`handleBattery`, `XiaomiSystemService.java:380-403`);
-`level`/`state` are the only fields `ios/Manumit` decodes so far,
-`lastCharge` unparsed. Implemented in `ios/Manumit` (M4); not yet confirmed
-against real hardware.
+`XiaomiSystemService.java` (lines 107-141) uses. Confirmed byte-for-byte on
+hardware: sent as 4-byte plaintext `08 02 10 01`, encrypted to `12 71 45 E4`.
+Response is `Command{type=2, subtype=1, system=System{power=Power{battery=
+Battery{level, state, lastCharge}}}}` (`handleBattery`,
+`XiaomiSystemService.java:380-403`) — decrypted on hardware to `08 02 10 01
+22 12 12 10 0A 0E 08 63 10 02 1A 08 08 03 10 A5 E7 B6 D3 06`, decoding to
+`level=99 state=2 lastCharge={state=3, timestampSeconds=1785574309}` (=
+2026-08-01 08:51 UTC, a day before capture — a plausible last-charge time,
+not garbage). `level`/`state` are the only fields `ios/Manumit` decodes so
+far; `lastCharge` present on the wire but unparsed by the app.
 
 ### 5.1 Full command catalog
 
