@@ -16,27 +16,25 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import SwiftUI
+import HealthKit
 
-private let keychainAccount = "auth-key"
-
-@main
-struct ManumitApp: App {
-    @State private var onboarded = KeychainStore.load(account: keychainAccount) != nil
+struct MainTabView: View {
+    @StateObject private var session = BandSession()
+    @StateObject private var systemCommands: SystemCommandService
+    private let healthStore = HKHealthStore()
 
     init() {
-        #if DEBUG
-        SppV2Codec.selfTest()
-        XiaomiProto.selfTest()
-        #endif
+        let session = BandSession()
+        _session = StateObject(wrappedValue: session)
+        _systemCommands = StateObject(wrappedValue: SystemCommandService(session: session))
     }
 
-    var body: some Scene {
-        WindowGroup {
-            if onboarded {
-                MainTabView()
-            } else {
-                OnboardingView { onboarded = true }
-            }
+    var body: some View {
+        TabView {
+            DashboardView(healthStore: healthStore)
+                .environmentObject(session)
+                .tabItem { Label("Dashboard", systemImage: "gauge") }
+            // Task 10 adds a System tab here; Task 11 adds a Settings tab.
         }
     }
 }

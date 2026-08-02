@@ -99,6 +99,8 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
     // which only cares about its own (type, subtype) pairs.
     var onEncryptedCommand: ((XiaomiProto.DecodedCommand) -> Void)?
 
+    var onDailySummaryParsed: ((DailySummaryRecord) -> Void)?
+
     func sendEncryptedCommand(_ body: Data) {
         sendEncryptedData(rawChannel: 1, body: body)
     }
@@ -501,7 +503,7 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         appendLog("got file body (\(data.count) bytes) for \(Self.activityFileIdFormatter.string(from: fileId.timestamp))")
         if let record = DailySummaryParser.parse(fileId: fileId, bytes: data) {
             appendLog("parsed daily summary: steps=\(record.steps) calories=\(record.totalCalories)")
-            // Task 5/6 plug in here: LocalStore.upsert(record) -> HealthKitStore.save
+            onDailySummaryParsed?(record)
         } else {
             appendLog("unsupported or unparseable activity file (version=\(fileId.version)), skipping")
         }
