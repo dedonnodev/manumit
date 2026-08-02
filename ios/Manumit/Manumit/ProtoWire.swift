@@ -131,12 +131,18 @@ enum XiaomiProto {
         var type: UInt64
         var subtype: UInt64
         var authBytes: Data?
+        var systemBytes: Data?
         var status: UInt64?
     }
 
     struct DecodedWatchNonce {
         var nonce: Data
         var hmac: Data
+    }
+
+    struct DecodedBattery {
+        var level: UInt64?
+        var state: UInt64?
     }
 
     // -- build (phone -> watch) --
@@ -146,6 +152,17 @@ enum XiaomiProto {
         w.putVarint(1, type)
         w.putVarint(2, subtype)
         w.putBytes(3, authField)
+        return w.data
+    }
+
+    /// GET-style requests (e.g. System/Battery, System/DeviceInfo) send just
+    /// type+subtype, no other field -- matches Gadgetbridge's
+    /// `sendCommand(taskName, type, subtype)` overload, which builds a bare
+    /// `Command` with nothing else set (`XiaomiSupport.java:423-431`).
+    static func commandTypeSubtypeOnly(type: UInt64, subtype: UInt64) -> Data {
+        var w = ProtoWriter()
+        w.putVarint(1, type)
+        w.putVarint(2, subtype)
         return w.data
     }
 
@@ -179,6 +196,7 @@ enum XiaomiProto {
         var r = ProtoReader(data)
         var type: UInt64 = 0, subtype: UInt64 = 0
         var authBytes: Data?
+        var systemBytes: Data?
         var status: UInt64?
         while r.hasMore {
             let (field, wireType) = r.readTag()
@@ -186,11 +204,52 @@ enum XiaomiProto {
             case (1, 0): type = r.readVarint()
             case (2, 0): subtype = r.readVarint()
             case (3, 2): authBytes = r.readBytes()
+            case (4, 2): systemBytes = r.readBytes()
             case (100, 0): status = r.readVarint()
             default: r.skip(wireType: wireType)
             }
         }
-        return DecodedCommand(type: type, subtype: subtype, authBytes: authBytes, status: status)
+        return DecodedCommand(type: type, subtype: subtype, authBytes: authBytes, systemBytes: systemBytes, status: status)
+    }
+
+    /// `System.power.battery` (fields 2, 1 respectively) -- the only System
+    /// payload this app decodes so far (M4).
+    static func decodeBattery(fromSystem systemBytes: Data) -> DecodedBattery? {
+        var sr = ProtoReader(systemBytes)
+        var powerBytes: Data?
+        while sr.hasMore {
+            let (field, wireType) = sr.readTag()
+            if field == 2, wireType == 2 {
+                powerBytes = sr.readBytes()
+            } else {
+                sr.skip(wireType: wireType)
+            }
+        }
+        guard let powerBytes = powerBytes else { return nil }
+
+        var pr = ProtoReader(powerBytes)
+        var batteryBytes: Data?
+        while pr.hasMore {
+            let (field, wireType) = pr.readTag()
+            if field == 1, wireType == 2 {
+                batteryBytes = pr.readBytes()
+            } else {
+                pr.skip(wireType: wireType)
+            }
+        }
+        guard let batteryBytes = batteryBytes else { return nil }
+
+        var br = ProtoReader(batteryBytes)
+        var level: UInt64?, state: UInt64?
+        while br.hasMore {
+            let (field, wireType) = br.readTag()
+            switch (field, wireType) {
+            case (1, 0): level = br.readVarint()
+            case (2, 0): state = br.readVarint()
+            default: br.skip(wireType: wireType)
+            }
+        }
+        return DecodedBattery(level: level, state: state)
     }
 
     static func decodeWatchNonce(fromAuth authBytes: Data) -> DecodedWatchNonce? {

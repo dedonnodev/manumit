@@ -33,7 +33,7 @@ struct ContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Manumit").font(.largeTitle.bold())
-            Text("M3: BLE handshake against the Band 10 (docs/PROTOCOL.md §3)")
+            Text("M4: encrypted round-trip against the Band 10 (docs/PROTOCOL.md §4.2)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

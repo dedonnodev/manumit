@@ -16,9 +16,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 // BLE-GATT transport (FE95/005E/005F, docs/PROTOCOL.md §0a) + SPP-V2
-// session framing + the §3 auth handshake, wired together. This is M3:
-// scan -> connect -> StartSessionRequest -> PhoneNonce -> verify WatchNonce
-// -> AuthStep3 -> authenticated.
+// session framing + the §3 auth handshake, wired together. M3: scan ->
+// connect -> StartSessionRequest -> PhoneNonce -> verify WatchNonce ->
+// AuthStep3 -> authenticated. M4: first encrypted round-trip -- once
+// authenticated, request System/Battery (§4.2 AES-CTR) to prove
+// derivedKeys.encryptionKey/decryptionKey actually work both ways.
 
 import CoreBluetooth
 import Foundation
@@ -283,8 +285,18 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
             let rawChannel = packet.payload[packet.payload.startIndex] & 0xF
             let opCode = packet.payload[packet.payload.startIndex + 1]
             let body = packet.payload.subdata(in: (packet.payload.startIndex + 2)..<packet.payload.endIndex)
-            guard rawChannel == 1, opCode == 1 else { return } // Auth is always plaintext Protobuf
-            handleAuthCommand(body: body)
+            guard rawChannel == 1 else { return } // only the Protobuf command channel, for this milestone
+            switch opCode {
+            case 1: // plaintext -- Auth only (§2.3)
+                handleAuthCommand(body: body)
+            case 2: // encrypted -- everything else, once authenticated (§4.2)
+                guard let derivedKeys = derivedKeys else { return }
+                let decrypted = AuthCrypto.ctrCrypt(key: derivedKeys.decryptionKey, data: body)
+                logDecrypted(hex: hexString(decrypted))
+                handleEncryptedCommand(body: decrypted)
+            default:
+                break
+            }
         default:
             break
         }
@@ -308,10 +320,37 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
             } else {
                 appendLog("watch acked AuthStep3 -- authenticated")
                 state = .authenticated
+                sendBatteryRequest()
             }
         default:
             break
         }
+    }
+
+    // MARK: - §4.2 encrypted round-trip (M4)
+
+    private func sendEncryptedData(rawChannel: UInt8, body: Data) {
+        guard let derivedKeys = derivedKeys else { return }
+        let encrypted = AuthCrypto.ctrCrypt(key: derivedKeys.encryptionKey, data: body)
+        sendData(rawChannel: rawChannel, opCode: 2, body: encrypted)
+    }
+
+    // type=2 System, subtype=1 Battery -- bare GET, no request body fields
+    // (XiaomiSystemService.java:107-108, XiaomiSupport.java:423-431).
+    private func sendBatteryRequest() {
+        appendLog("requesting battery")
+        sendEncryptedData(rawChannel: 1, body: XiaomiProto.commandTypeSubtypeOnly(type: 2, subtype: 1))
+    }
+
+    private func handleEncryptedCommand(body: Data) {
+        let command = XiaomiProto.decodeCommand(body)
+        guard command.type == 2, command.subtype == 1,
+              let systemBytes = command.systemBytes,
+              let battery = XiaomiProto.decodeBattery(fromSystem: systemBytes) else {
+            appendLog("unhandled encrypted command type=\(command.type) subtype=\(command.subtype)")
+            return
+        }
+        appendLog("battery: level=\(battery.level.map { "\($0)" } ?? "?") state=\(battery.state.map { "\($0)" } ?? "?")")
     }
 
     // MARK: - §3 handshake
@@ -395,6 +434,17 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
             "direction": direction,
             "characteristic": characteristic.uuidString,
             "hex": hexString(data),
+        ])
+    }
+
+    // Decrypted body alongside the raw hex `logRaw` already wrote for this
+    // same packet -- never the key material itself (CLAUDE.md secrets rule).
+    private func logDecrypted(hex: String) {
+        guard let start = fixtureStart else { return }
+        writeFixtureLine([
+            "t": ProcessInfo.processInfo.systemUptime - start,
+            "direction": "rx",
+            "decrypted_hex": hex,
         ])
     }
 
