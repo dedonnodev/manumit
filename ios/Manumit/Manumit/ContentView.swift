@@ -21,7 +21,13 @@ private let keychainAccount = "auth-key"
 
 struct ContentView: View {
     @StateObject private var session = BandSession()
-    @State private var authKeyHex: String = KeychainStore.load(account: keychainAccount) ?? ""
+    // Loaded in onAppear, not here -- SecureField has a known SwiftUI bug
+    // where text set on a @State var before the field's first layout pass
+    // doesn't render (the dots just don't show up), even though the bound
+    // value and everything downstream of it (this auto-connect check
+    // included) is correct. Assigning after the view has appeared works
+    // around it.
+    @State private var authKeyHex: String = ""
     @State private var keychainSaveConfirmedAt: Date?
 
     var body: some View {
@@ -87,6 +93,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
+            authKeyHex = KeychainStore.load(account: keychainAccount) ?? authKeyHex
             if authKeyHex.count == 32, BandSession.hasSavedPeripheral, session.state == .idle {
                 session.start(secretKeyHex: authKeyHex)
             }
