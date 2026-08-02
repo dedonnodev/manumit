@@ -39,3 +39,18 @@ jobs:
         with:
           name: Manumit-unsigned
           path: build/Manumit.ipa
+
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run unit tests (logic only -- no BLE/HealthKit, runs on simulator)
+        run: |
+          xcodebuild test \
+            -project ios/Manumit/Manumit.xcodeproj \
+            -scheme Manumit \
+            -destination "platform=iOS Simulator,name=iPhone 15" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
