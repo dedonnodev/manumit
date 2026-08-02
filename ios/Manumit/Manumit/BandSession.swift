@@ -56,6 +56,39 @@ enum HandshakeState: Equatable {
     }
 }
 
+/// §6.2 step 4-5: reassembles `[uint16 total][uint16 num][payload]`-chunked
+/// activity file transfers (`XiaomiActivityFileFetcher.java:91-145`) and
+/// verifies the CRC32 trailer. Pure/synchronous, no BLE -- separated out so
+/// it's unit-testable without a live peripheral.
+final class ActivityFileFetchBuffer {
+    private var buffer = Data()
+
+    /// Feed one chunk. Returns the full verified file bytes (fileId + padding
+    /// + body, CRC trailer included) once the last chunk of a transfer
+    /// arrives and its CRC32 checks out; nil while still accumulating, and
+    /// nil (logged, buffer dropped) if the CRC doesn't match or the chunk
+    /// header is malformed -- never guessed at.
+    func addChunk(_ chunk: Data) -> Data? {
+        guard chunk.count >= 4 else { return nil }
+        let base = chunk.startIndex
+        let total = UInt16(chunk[base]) | UInt16(chunk[base + 1]) << 8
+        let num = UInt16(chunk[base + 2]) | UInt16(chunk[base + 3]) << 8
+        if num == 1 { buffer = Data() }
+        buffer.append(chunk.suffix(from: base + 4))
+        guard num == total else { return nil }
+
+        let data = buffer
+        buffer = Data()
+        guard data.count >= 7 + 1 + 4 else { return nil } // fileId + padding + at least an empty body + CRC
+        let bodyEnd = data.index(data.endIndex, offsetBy: -4)
+        let expectedCrc = UInt32(data[bodyEnd]) | UInt32(data[bodyEnd + 1]) << 8
+            | UInt32(data[bodyEnd + 2]) << 16 | UInt32(data[bodyEnd + 3]) << 24
+        let body = data[data.startIndex..<bodyEnd]
+        guard CRC32.checksum(Data(body)) == expectedCrc else { return nil }
+        return data
+    }
+}
+
 final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     @Published private(set) var state: HandshakeState = .idle
     @Published private(set) var log: [String] = []
@@ -86,6 +119,8 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
     private var rxBuffer = Data()
     private var sendSeq: UInt8 = 0
+    private let activityFetchBuffer = ActivityFileFetchBuffer()
+    private var pendingActivityFileIds: [XiaomiProto.DecodedActivityFileId] = []
 
     private var fixtureHandle: FileHandle?
     private var fixtureStart: TimeInterval?
@@ -287,15 +322,23 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
             let rawChannel = packet.payload[packet.payload.startIndex] & 0xF
             let opCode = packet.payload[packet.payload.startIndex + 1]
             let body = packet.payload.subdata(in: (packet.payload.startIndex + 2)..<packet.payload.endIndex)
-            guard rawChannel == 1 else { return } // only the Protobuf command channel, for this milestone
-            switch opCode {
-            case 1: // plaintext -- Auth only (§2.3)
-                handleAuthCommand(body: body)
-            case 2: // encrypted -- everything else, once authenticated (§4.2)
-                guard let derivedKeys = derivedKeys else { return }
-                let decrypted = AuthCrypto.ctrCrypt(key: derivedKeys.decryptionKey, data: body)
-                logDecrypted(hex: hexString(decrypted))
-                handleEncryptedCommand(body: decrypted)
+            switch rawChannel {
+            case 1: // Protobuf command channel
+                switch opCode {
+                case 1: // plaintext -- Auth only (§2.3)
+                    handleAuthCommand(body: body)
+                case 2: // encrypted -- everything else, once authenticated (§4.2)
+                    guard let derivedKeys = derivedKeys else { return }
+                    let decrypted = AuthCrypto.ctrCrypt(key: derivedKeys.decryptionKey, data: body)
+                    logDecrypted(hex: hexString(decrypted))
+                    handleEncryptedCommand(body: decrypted)
+                default:
+                    break
+                }
+            case 2: // CHANNEL_DATA -- activity file chunks, always plaintext (§5.0, §6.2 step 4)
+                if let fileBytes = activityFetchBuffer.addChunk(body) {
+                    handleActivityFileBody(fileBytes)
+                }
             default:
                 break
             }
@@ -412,7 +455,43 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         if subtype == 1 {
             sendActivityFetchPastRequest()
         }
-        // Task 3 adds: enqueue fileIds for per-file body fetch here.
+        pendingActivityFileIds.append(contentsOf: fileIds)
+        if pendingActivityFileIds.count == fileIds.count {
+            // wasn't already mid-fetch -- kick off the queue
+            requestNextActivityFile()
+        }
+    }
+
+    // MARK: - §6.2 step 3-6: per-file body fetch (M6)
+
+    private func requestNextActivityFile() {
+        guard !pendingActivityFileIds.isEmpty else {
+            appendLog("activity fetch queue empty")
+            return
+        }
+        let fileId = pendingActivityFileIds[0]
+        appendLog("requesting file body: \(Self.activityFileIdFormatter.string(from: fileId.timestamp))")
+        var health = ProtoWriter()
+        health.putBytes(2, fileId.encode()) // Health.activityRequestFileIds, field 2
+        sendEncryptedData(rawChannel: 1, body: XiaomiProto.commandWithHealth(type: 8, subtype: 3, healthField: health.data))
+    }
+
+    private func ackActivityFile(_ fileId: XiaomiProto.DecodedActivityFileId) {
+        var health = ProtoWriter()
+        health.putBytes(3, fileId.encode()) // Health.activitySyncAckFileIds, field 3
+        sendEncryptedData(rawChannel: 1, body: XiaomiProto.commandWithHealth(type: 8, subtype: 5, healthField: health.data))
+    }
+
+    private func handleActivityFileBody(_ data: Data) {
+        guard !pendingActivityFileIds.isEmpty else {
+            appendLog("got activity file body with no pending request, dropping")
+            return
+        }
+        let fileId = pendingActivityFileIds.removeFirst()
+        appendLog("got file body (\(data.count) bytes) for \(Self.activityFileIdFormatter.string(from: fileId.timestamp))")
+        // Task 4 plugs in: DailySummaryParser.parse(fileId:, bytes: data) -> LocalStore/HealthKit
+        ackActivityFile(fileId)
+        requestNextActivityFile()
     }
 
     // MARK: - §3 handshake
