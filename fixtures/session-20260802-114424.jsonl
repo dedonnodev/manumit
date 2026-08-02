@@ -1,0 +1,6 @@
+{"captured_via":"ios\/Manumit","meta":true,"device":"Xiaomi Smart Band 10 E817","date":"2026-08-02T09:44:24Z"}
+{"t":0.047816166668781079,"event":"notify subscribed=true","direction":"event","characteristic":"005E"}
+{"t":0.04799250000360189,"hex":"A5 A5 02 00 16 00 1D 4D 01 01 03 00 01 00 00 02 02 00 00 FC 03 02 00 20 00 04 02 00 10 27","direction":"tx","characteristic":"005F"}
+{"characteristic":"005E","direction":"rx","t":0.12324854166945443,"hex":"A5 A5 02 00 16 00 15 19 02 01 03 00 03 00 41 02 02 00 00 80 03 02 00 03 00 04 02 00 80 3E"}
+{"direction":"rx","decoded":{"sequence":0,"packet_type":"SessionConfig","payload_len":22},"t":0.12375795833213488}
+{"characteristic":"005F","direction":"tx","t":0.12398100000427803,"hex":"A5 A5 03 01 1D 00 2D 36 01 01 08 01 10 1A 1A 15 F2 01 12 0A 10 83 85 74 30 46 4E E8 B3 3B F0 70 F9 A8 DC 60 7A"}

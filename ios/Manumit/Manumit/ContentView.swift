@@ -65,7 +65,7 @@ struct ContentView: View {
             }
             .disabled(authKeyHex.count != 32)
             if session.state == .scanning {
-                Text("Stuck scanning? Open Mi Fitness and let it sync -- the Band's BLE advertising window is narrow and tied to that (docs/PROTOCOL.md §0a).")
+                Text("Stuck scanning? Trigger a sync from Mi Fitness first, then close it before connecting here -- the Band only holds one BLE connection at a time, and its advertising window is narrow and tied to that sync (docs/PROTOCOL.md §0a).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

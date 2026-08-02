@@ -85,10 +85,14 @@ struct ProtoReader {
         return (Int(tag >> 3), Int(tag & 0x7))
     }
 
+    // Bounds-checked: `bytes` comes straight off the BLE wire (a system
+    // boundary), and an unexpected/malformed message must not crash the app
+    // -- stop parsing and let the caller's field-presence checks fail
+    // instead of trapping on an out-of-range subscript.
     mutating func readVarint() -> UInt64 {
         var result: UInt64 = 0
         var shift: UInt64 = 0
-        while true {
+        while offset < bytes.count {
             let byte = bytes[offset]
             offset += 1
             result |= UInt64(byte & 0x7F) << shift
@@ -100,6 +104,10 @@ struct ProtoReader {
 
     mutating func readBytes() -> Data {
         let len = Int(readVarint())
+        guard len >= 0, offset + len <= bytes.count else {
+            offset = bytes.count
+            return Data()
+        }
         let d = Data(bytes[offset..<offset + len])
         offset += len
         return d

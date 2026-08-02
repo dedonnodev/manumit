@@ -218,6 +218,9 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Used to connect to your Xiaomi Smart Band 10.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Used to connect to your Xiaomi Smart Band 10.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = (
+					"bluetooth-central",
+				);
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -248,6 +251,9 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Used to connect to your Xiaomi Smart Band 10.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Used to connect to your Xiaomi Smart Band 10.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = (
+					"bluetooth-central",
+				);
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

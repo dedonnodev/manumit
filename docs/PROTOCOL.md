@@ -56,6 +56,14 @@ unsigned via `.github/workflows/mficheck-ipa.yml` and sideloaded).
   quirk observed on the Windows classic-BT side, §1a). Practical consequence:
   a passive scan often sees nothing; triggering a sync from the Xiaomi
   Wear/Mi Fitness app while scanning is what surfaces it.
+- **[verified, `ios/Manumit`]** The Band appears to hold only one active BLE
+  central connection at a time. Connecting from `ios/Manumit` mid-handshake
+  and then opening Mi Fitness (which reconnects and syncs) tears down
+  Manumit's session -- observed as the notify characteristic going silent
+  (no further `005E` frames in the auto-logged fixture after our last `tx`)
+  rather than a clean `didDisconnectPeripheral`. Don't run a Manumit
+  handshake and Mi Fitness at the same time; trigger the sync first (previous
+  bullet), then close Mi Fitness before connecting from Manumit.
 - Once connected, GATT table observed:
   - **`FE95`** — SIG-registered to Xiaomi Inc. (MiBeacon; verified against
     the official Bluetooth SIG assigned-numbers registry, not from memory).
