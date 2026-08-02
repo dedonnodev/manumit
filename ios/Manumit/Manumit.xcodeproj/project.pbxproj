@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		BB0000000000000000000021 /* ManumitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* ManumitApp.swift */; };
-		BB0000000000000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* ContentView.swift */; };
 		BB0000000000000000000023 /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* CoreBluetooth.framework */; };
 		BB0000000000000000000025 /* BandSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* BandSession.swift */; };
 		BB0000000000000000000026 /* SppV2Codec.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000016 /* SppV2Codec.swift */; };
@@ -25,6 +24,7 @@
 		BB0000000000000000000205 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000105 /* MainTabView.swift */; };
 		BB0000000000000000000206 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000106 /* DashboardView.swift */; };
 		BB0000000000000000000207 /* SystemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000107 /* SystemView.swift */; };
+		BB0000000000000000000208 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000108 /* SettingsView.swift */; };
 		CC0000000000000000000012 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000011 /* XCTest.framework */; };
 		CC0000000000000000000199 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000099 /* SmokeTests.swift */; };
 		CC0000000000000000000200 /* ActivityFileIdEncodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */; };
@@ -48,7 +48,6 @@
 /* Begin PBXFileReference section */
 		BB0000000000000000000010 /* Manumit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Manumit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000011 /* ManumitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManumitApp.swift; sourceTree = "<group>"; };
-		BB0000000000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000013 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
 		BB0000000000000000000015 /* BandSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandSession.swift; sourceTree = "<group>"; };
 		BB0000000000000000000016 /* SppV2Codec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SppV2Codec.swift; sourceTree = "<group>"; };
@@ -64,6 +63,7 @@
 		BB0000000000000000000105 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000106 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000107 /* SystemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000108 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000109 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
 		BB0000000000000000000110 /* Manumit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Manumit.entitlements; sourceTree = "<group>"; };
 		CC0000000000000000000010 /* ManumitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ManumitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -121,7 +121,6 @@
 			isa = PBXGroup;
 			children = (
 				BB0000000000000000000011 /* ManumitApp.swift */,
-				BB0000000000000000000012 /* ContentView.swift */,
 				BB0000000000000000000104 /* OnboardingView.swift */,
 				BB0000000000000000000015 /* BandSession.swift */,
 				BB0000000000000000000016 /* SppV2Codec.swift */,
@@ -136,6 +135,7 @@
 				BB0000000000000000000105 /* MainTabView.swift */,
 				BB0000000000000000000106 /* DashboardView.swift */,
 				BB0000000000000000000107 /* SystemView.swift */,
+				BB0000000000000000000108 /* SettingsView.swift */,
 				BB0000000000000000000110 /* Manumit.entitlements */,
 			);
 			path = Manumit;
@@ -263,7 +263,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				BB0000000000000000000021 /* ManumitApp.swift in Sources */,
-				BB0000000000000000000022 /* ContentView.swift in Sources */,
 				BB0000000000000000000204 /* OnboardingView.swift in Sources */,
 				BB0000000000000000000025 /* BandSession.swift in Sources */,
 				BB0000000000000000000026 /* SppV2Codec.swift in Sources */,
@@ -278,6 +277,7 @@
 				BB0000000000000000000205 /* MainTabView.swift in Sources */,
 				BB0000000000000000000206 /* DashboardView.swift in Sources */,
 				BB0000000000000000000207 /* SystemView.swift in Sources */,
+				BB0000000000000000000208 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

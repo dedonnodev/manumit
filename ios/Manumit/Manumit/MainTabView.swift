@@ -38,7 +38,9 @@ struct MainTabView: View {
                 .environmentObject(systemCommands)
                 .environmentObject(session)
                 .tabItem { Label("System", systemImage: "app.badge") }
-            // Task 11 adds a Settings tab here.
+            SettingsView()
+                .environmentObject(session)
+                .tabItem { Label("Settings", systemImage: "gear") }
         }
     }
 }
