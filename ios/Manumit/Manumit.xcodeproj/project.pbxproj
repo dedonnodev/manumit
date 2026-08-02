@@ -17,6 +17,7 @@
 		BB0000000000000000000029 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000019 /* KeychainStore.swift */; };
 		CC0000000000000000000012 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000011 /* XCTest.framework */; };
 		CC0000000000000000000199 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000099 /* SmokeTests.swift */; };
+		CC0000000000000000000200 /* ActivityFileIdEncodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,6 +43,7 @@
 		CC0000000000000000000010 /* ManumitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ManumitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC0000000000000000000011 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/iPhoneOS.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
 		CC0000000000000000000099 /* SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmokeTests.swift; sourceTree = "<group>"; };
+		CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFileIdEncodeTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +112,7 @@
 			isa = PBXGroup;
 			children = (
 				CC0000000000000000000099 /* SmokeTests.swift */,
+				CC0000000000000000000100 /* ActivityFileIdEncodeTests.swift */,
 			);
 			path = ManumitTests;
 			sourceTree = "<group>";
@@ -226,6 +229,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CC0000000000000000000199 /* SmokeTests.swift in Sources */,
+				CC0000000000000000000200 /* ActivityFileIdEncodeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

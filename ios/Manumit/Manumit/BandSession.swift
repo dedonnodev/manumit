@@ -355,19 +355,19 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
             }
             appendLog("battery: level=\(battery.level.map { "\($0)" } ?? "?") state=\(battery.state.map { "\($0)" } ?? "?")")
             sendActivityFetchTodayRequest()
-        case (8, 1):
+        case (8, 1), (8, 2):
             guard let healthBytes = command.healthBytes,
                   let fileIds = XiaomiProto.decodeActivityFileIds(fromHealth: healthBytes) else {
                 appendLog("could not parse activity file id response (health bytes=\(command.healthBytes?.count ?? 0))")
                 return
             }
-            logActivityFileIds(fileIds)
+            logActivityFileIds(fileIds, subtype: command.subtype)
         default:
             appendLog("unhandled encrypted command type=\(command.type) subtype=\(command.subtype)")
         }
     }
 
-    // MARK: - §6.2 activity file-id fetch (M5, TODAY only)
+    // MARK: - §6.2 activity file-id fetch (M5 TODAY, M6 extends to PAST)
 
     // Health{activitySyncRequestToday=ActivitySyncRequestToday{unknown1=0}}
     // (XiaomiHealthService.java:802-814, fetchRecordedDataToday).
@@ -376,27 +376,43 @@ final class BandSession: NSObject, ObservableObject, CBCentralManagerDelegate, C
         sendEncryptedData(rawChannel: 1, body: XiaomiProto.commandWithHealth(type: 8, subtype: 1, healthField: XiaomiProto.healthActivitySyncRequestToday()))
     }
 
+    // Bare Command{type=8, subtype=2}, no health field
+    // (XiaomiHealthService.java:816-824, fetchRecordedDataPast).
+    private func sendActivityFetchPastRequest() {
+        appendLog("requesting past activity file ids")
+        sendEncryptedData(rawChannel: 1, body: XiaomiProto.commandTypeSubtypeOnly(type: 8, subtype: 2))
+    }
+
     private static let activityFileIdFormatter = ISO8601DateFormatter()
 
-    private func logActivityFileIds(_ fileIds: [XiaomiProto.DecodedActivityFileId]) {
+    // subtype: 1=TODAY response (chain into PAST next, matching Gadgetbridge's
+    // fetchRecordedDataPast() call from handleActivityFetchResponse when
+    // subtype==CMD_ACTIVITY_FETCH_TODAY, XiaomiHealthService.java:878-880),
+    // 2=PAST response (no further chaining -- Task 3 starts per-file fetch here).
+    private func logActivityFileIds(_ fileIds: [XiaomiProto.DecodedActivityFileId], subtype: UInt64) {
         appendLog("got \(fileIds.count) activity file id(s)")
         for f in fileIds {
             appendLog("  file: \(Self.activityFileIdFormatter.string(from: f.timestamp)) tz=\(f.timezoneBlocks) version=\(f.version) flags=0x\(String(format: "%02X", f.flags))")
         }
-        guard let start = fixtureStart else { return }
-        let entries: [[String: Any]] = fileIds.map {
-            [
-                "timestamp": Self.activityFileIdFormatter.string(from: $0.timestamp),
-                "timezone_blocks": Int($0.timezoneBlocks),
-                "version": Int($0.version),
-                "flags": Int($0.flags),
-            ]
+        if let start = fixtureStart {
+            let entries: [[String: Any]] = fileIds.map {
+                [
+                    "timestamp": Self.activityFileIdFormatter.string(from: $0.timestamp),
+                    "timezone_blocks": Int($0.timezoneBlocks),
+                    "version": Int($0.version),
+                    "flags": Int($0.flags),
+                ]
+            }
+            writeFixtureLine([
+                "t": ProcessInfo.processInfo.systemUptime - start,
+                "direction": "rx",
+                "activity_file_ids": entries,
+            ])
         }
-        writeFixtureLine([
-            "t": ProcessInfo.processInfo.systemUptime - start,
-            "direction": "rx",
-            "activity_file_ids": entries,
-        ])
+        if subtype == 1 {
+            sendActivityFetchPastRequest()
+        }
+        // Task 3 adds: enqueue fileIds for per-file body fetch here.
     }
 
     // MARK: - §3 handshake

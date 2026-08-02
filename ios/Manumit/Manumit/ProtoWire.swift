@@ -152,6 +152,22 @@ enum XiaomiProto {
         var timezoneBlocks: Int8 // 15-min blocks, signed (west of UTC is negative)
         var version: UInt8
         var flags: UInt8 // bit7=type bits1-6=subtype bits0-1=detailType -- raw, not decomposed (M6+)
+
+        /// Inverse of `decodeActivityFileIds` -- the 7 raw bytes as received,
+        /// needed to re-send this file id in a `CMD_ACTIVITY_FETCH_REQUEST` or
+        /// `CMD_ACTIVITY_FETCH_ACK` (`XiaomiActivityFileId.java:83-90`).
+        func encode() -> Data {
+            var d = Data()
+            let ts = UInt32(timestamp.timeIntervalSince1970)
+            d.append(UInt8(ts & 0xFF))
+            d.append(UInt8((ts >> 8) & 0xFF))
+            d.append(UInt8((ts >> 16) & 0xFF))
+            d.append(UInt8((ts >> 24) & 0xFF))
+            d.append(UInt8(bitPattern: timezoneBlocks))
+            d.append(version)
+            d.append(flags)
+            return d
+        }
     }
 
     // -- build (phone -> watch) --
