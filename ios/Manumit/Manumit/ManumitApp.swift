@@ -17,8 +17,12 @@
 
 import SwiftUI
 
+private let keychainAccount = "auth-key"
+
 @main
 struct ManumitApp: App {
+    @State private var onboarded = KeychainStore.load(account: keychainAccount) != nil
+
     init() {
         #if DEBUG
         SppV2Codec.selfTest()
@@ -28,7 +32,11 @@ struct ManumitApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if onboarded {
+                Text("Main app lands in Task 9") // Task 9 Step 4 replaces this with MainTabView()
+            } else {
+                OnboardingView { onboarded = true }
+            }
         }
     }
 }
